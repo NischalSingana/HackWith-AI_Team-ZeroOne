@@ -35,6 +35,20 @@ except ImportError as e:
     HAS_NETWORKX = False
     print(f"⚠️ NetworkX not available — analysis endpoints disabled: {e}")
 
+# ========== ML Predictions Setup ==========
+try:
+    from ml_predictions import (
+        train_severity_model,
+        predict_severity,
+        predict_hotspots as ml_predict_hotspots,
+        detect_anomalies,
+    )
+    HAS_ML = True
+    print("✅ ML predictions engine loaded")
+except ImportError as e:
+    HAS_ML = False
+    print(f"⚠️ ML predictions not available: {e}")
+
 # ========== Google Vision API Setup ==========
 from google.cloud import vision
 from google.oauth2 import service_account
@@ -170,6 +184,7 @@ async def health():
         "translator": "enabled" if HAS_TRANSLATOR else "disabled",
         "neo4j": "enabled" if neo4j.is_connected else "disabled",
         "networkx": "enabled" if HAS_NETWORKX else "disabled",
+        "ml_predictions": "enabled" if HAS_ML else "disabled",
     }
 
 
@@ -612,6 +627,75 @@ async def analysis_connections(node_a: str, node_b: str):
     return find_connections(node_a, node_b, G)
 
 
+# ========== ML Prediction API Endpoints ==========
+
+class SeverityPredictRequest(BaseModel):
+    fir_number: Optional[str] = None
+    incident_date: Optional[str] = None
+    cause: Optional[str] = None
+    victims: Optional[list] = []
+    vehicles: Optional[list] = []
+    confidence_score: Optional[float] = 0.0
+
+
+@app.post("/ml/train")
+async def ml_train():
+    """
+    Train the severity classification model using current graph data.
+    Re-train whenever new FIRs are ingested.
+    """
+    if not HAS_ML:
+        raise HTTPException(status_code=503, detail="ML not available")
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    result = train_severity_model(G)
+    return result
+
+
+@app.post("/ml/predict-severity")
+async def ml_predict_severity(data: SeverityPredictRequest):
+    """
+    Predict severity (Fatal / Grievous / Non-Fatal) for a given FIR.
+    Trains model automatically if not already done.
+    """
+    if not HAS_ML:
+        raise HTTPException(status_code=503, detail="ML not available")
+    G = build_networkx_graph() if HAS_NETWORKX else None
+    return predict_severity(data.dict(), G)
+
+
+@app.get("/ml/predict-hotspots")
+async def ml_hotspots(top_n: int = 10):
+    """
+    Predict and rank next likely accident hotspot locations using a
+    composite risk model (FIR history + severity + graph centrality).
+    """
+    if not HAS_ML:
+        raise HTTPException(status_code=503, detail="ML not available")
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return ml_predict_hotspots(G, top_n=top_n)
+
+
+@app.get("/ml/detect-anomalies")
+async def ml_anomalies(contamination: float = 0.1):
+    """
+    Detect anomalous FIRs using Isolation Forest.
+    Anomalies have unusual combinations of time, location, victims, vehicles, etc.
+    contamination: expected fraction of anomalies (0.0 – 0.5, default 0.1)
+    """
+    if not HAS_ML:
+        raise HTTPException(status_code=503, detail="ML not available")
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    if not 0.01 <= contamination <= 0.5:
+        raise HTTPException(status_code=400, detail="contamination must be between 0.01 and 0.5")
+    G = build_networkx_graph()
+    return detect_anomalies(G, contamination=contamination)
+
+
 # ========== Run Server ==========
 
 if __name__ == "__main__":
@@ -622,5 +706,6 @@ if __name__ == "__main__":
     print(f"   Translator: {'✅ Enabled' if HAS_TRANSLATOR else '❌ Disabled'}")
     print(f"   Neo4j:      {'✅ Enabled' if True else '❌ Disabled'}")
     print(f"   NetworkX:   {'✅ Enabled' if HAS_NETWORKX else '❌ Disabled'}")
+    print(f"   ML Models:  {'✅ Enabled' if HAS_ML else '❌ Disabled'}")
     print()
     uvicorn.run(app, host="0.0.0.0", port=8000)

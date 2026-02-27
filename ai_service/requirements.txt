@@ -11,3 +11,5 @@ python-dotenv
 neo4j
 networkx
 scipy
+scikit-learn
+numpy
