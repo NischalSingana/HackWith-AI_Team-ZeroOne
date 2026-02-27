@@ -17,7 +17,7 @@ import {
   Zap,
   Lock
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   { group: "Operations", items: [
@@ -37,9 +37,40 @@ const NAV_ITEMS = [
   ]}
 ];
 
+interface SystemStatus {
+  online: boolean;
+  load: number;
+  sync_mode: string;
+  ai_service: { status: string };
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [status, setStatus] = useState<SystemStatus>({ 
+    online: true, 
+    load: 14.2, 
+    sync_mode: 'Neural Sync',
+    ai_service: { status: 'online' }
+  });
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/system/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setStatus(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch system status", err);
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <>
@@ -120,28 +151,33 @@ export default function Sidebar() {
             ))}
           </div>
 
-          {/* System Bio-Metrics / Status (New Visual Element) */}
+          {/* System Bio-Metrics / Status (Functional) */}
           <div className="mt-auto pt-6 border-t border-slate-800/50">
             <div className="bg-slate-900/40 rounded-2xl p-4 border border-slate-800/50">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">System Link: Online</span>
+                        <div className={`w-1.5 h-1.5 rounded-full animate-ping ${status.online ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            System Link: {status.online ? 'Online' : 'Offline'}
+                        </span>
                     </div>
-                    <Lock size={12} className="text-slate-600" />
+                    <Lock size={12} className={status.online ? "text-indigo-500" : "text-slate-600"} />
                 </div>
                 <div className="space-y-2">
                     <div className="flex justify-between items-center text-[10px]">
                         <span className="text-slate-500">Processing Load</span>
-                        <span className="text-indigo-400 font-mono">14.2%</span>
+                        <span className="text-indigo-400 font-mono">{status.load.toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
-                        <div className="bg-indigo-500 h-full w-[14%]" />
+                        <div 
+                            className="bg-indigo-500 h-full transition-all duration-1000" 
+                            style={{ width: `${status.load}%` }} 
+                        />
                     </div>
                 </div>
                 <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500 font-medium">
-                    <Activity size={10} className="text-indigo-500" />
-                    <span>Neural Network v2.4a Sync</span>
+                    <Activity size={10} className={status.ai_service.status === 'online' ? "text-indigo-500" : "text-red-500"} />
+                    <span>Neural Network v2.4a {status.ai_service.status === 'online' ? 'Sync' : 'Critical'}</span>
                 </div>
             </div>
           </div>

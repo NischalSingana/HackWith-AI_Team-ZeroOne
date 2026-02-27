@@ -6,7 +6,10 @@ const firController = require('../controllers/firController');
 const insightsController = require('../controllers/insightsController');
 const mapController = require('../controllers/mapController');
 const jurisdictionController = require('../controllers/jurisdictionPsController');
-// Prototype controllers removed
+const systemController = require('../controllers/systemController');
+
+// ================ System Health ================
+router.get('/system/status', systemController.getSystemStatus);
 
 // Multer Storage Configuration
 const storage = multer.diskStorage({
