@@ -55,15 +55,23 @@ class Neo4jConnection:
             return True
 
         try:
+            # Use neo4j:// for Aura or bolt:// for direct
+            # Protocol sync failed often occurs with Bolt protocol mismatch or network instability
+            # Explicitly setting resolver or using neo4j:// usually helps
             self._driver = GraphDatabase.driver(
                 NEO4J_URI,
                 auth=(NEO4J_USER, NEO4J_PASSWORD),
                 max_connection_lifetime=3600,
                 max_connection_pool_size=50,
-                connection_acquisition_timeout=30,
+                connection_acquisition_timeout=60, # Increased timeout
             )
-            # Verify connectivity
-            self._driver.verify_connectivity()
+            # Verify connectivity with a retry
+            try:
+                self._driver.verify_connectivity()
+            except Exception as e:
+                logger.warning(f"⚠️ Initial connectivity check failed, retrying once: {e}")
+                self._driver.verify_connectivity()
+                
             logger.info(f"✅ Connected to Neo4j at {NEO4J_URI}")
             return True
 
@@ -171,8 +179,16 @@ class Neo4jConnection:
             result = tx.run(query, parameters or {})
             return [record.data() for record in result]
 
-        with self.get_session() as session:
-            return session.execute_read(_read_tx)
+        try:
+            with self.get_session() as session:
+                return session.execute_read(_read_tx)
+        except (ServiceUnavailable, ConnectionError) as e:
+            logger.warning(f"⚠️ Neo4j transaction failed ({e}), attempting to reconnect and retry...")
+            self.close()
+            if self.connect():
+                with self.get_session() as session:
+                    return session.execute_read(_read_tx)
+            raise e
 
     def execute_write(
         self, query: str, parameters: Optional[Dict[str, Any]] = None
@@ -187,8 +203,16 @@ class Neo4jConnection:
             result = tx.run(query, parameters or {})
             return [record.data() for record in result]
 
-        with self.get_session() as session:
-            return session.execute_write(_write_tx)
+        try:
+            with self.get_session() as session:
+                return session.execute_write(_write_tx)
+        except (ServiceUnavailable, ConnectionError) as e:
+            logger.warning(f"⚠️ Neo4j write transaction failed ({e}), attempting to reconnect and retry...")
+            self.close()
+            if self.connect():
+                with self.get_session() as session:
+                    return session.execute_write(_write_tx)
+            raise e
 
     def execute_write_batch(
         self, queries: List[Dict[str, Any]]
