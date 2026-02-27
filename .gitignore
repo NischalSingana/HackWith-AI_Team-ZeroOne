@@ -32,3 +32,8 @@ build/
 
 # Temp files
 temp_*
+/tmp/
+
+# App Folders
+/backend/uploads/
+/backend/temp/
