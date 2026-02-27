@@ -139,12 +139,10 @@ router.get('/graph/analysis/graph-data', async (req, res) => {
     }
 });
 
-// Analysis endpoints
-router.get('/graph/analysis/summary', (req, res) => proxyToAI(req, res, '/analysis/summary'));
-router.get('/graph/analysis/centrality', (req, res) => proxyToAI(req, res, '/analysis/centrality'));
-router.get('/graph/analysis/communities', (req, res) => proxyToAI(req, res, '/analysis/communities'));
-router.get('/graph/analysis/hotspots', (req, res) => proxyToAI(req, res, '/analysis/hotspots'));
-router.get('/graph/analysis/connections', (req, res) => proxyToAI(req, res, '/analysis/connections'));
+const graphController = require('../controllers/graphController');
+
+// Analysis endpoints (Cached)
+router.get('/graph/analysis/:type', graphController.getCachedAnalysis);
 
 // ML prediction endpoints
 router.post('/graph/ml/train', (req, res) => proxyToAI(req, res, '/ml/train', 'POST'));

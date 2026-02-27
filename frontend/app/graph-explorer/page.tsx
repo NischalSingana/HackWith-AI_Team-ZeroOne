@@ -42,6 +42,7 @@ interface GraphNode {
 interface CentralityNode {
   node: string;
   score: number;
+  percent?: number;
   node_type: string;
   severity?: string;
   cause?: string;
@@ -152,8 +153,8 @@ function useForceGraph(
 
     // ── Cooling system: simulation starts hot and freezes over time ──
     let alpha = 1.0;              // Current "temperature" of simulation
-    const ALPHA_DECAY = 0.985;    // Multiplicative decay per frame (~3s to freeze)
-    const ALPHA_MIN = 0.001;      // Stop threshold
+    const ALPHA_DECAY = 0.95;     // Faster decay for better stability (settles in ~1.5s)
+    const ALPHA_MIN = 0.005;      // Stop threshold
     let settled = false;          // Once settled, no more physics
 
     function drawGrid() {
@@ -527,10 +528,13 @@ export default function GraphExplorerPage() {
               <div className="lg:col-span-2 relative group">
                 <div className="absolute -inset-1 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000" />
                 <div className="relative h-[650px] bg-slate-950 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col">
-                  <div className="px-8 py-5 border-b border-slate-900 flex justify-between items-center bg-slate-950/50 backdrop-blur-xl z-10">
+                    <div className="px-8 py-5 border-b border-slate-900 flex justify-between items-center bg-slate-950/50 backdrop-blur-xl z-10">
                     <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                      <h2 className="text-xs font-black text-slate-200 uppercase tracking-[0.2em]">Matrix Topology Core</h2>
+                      <div>
+                        <h2 className="text-xs font-black text-slate-200 uppercase tracking-[0.2em]">Neural Relationship Matrix</h2>
+                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Autonomous self-organizing entity network</p>
+                      </div>
                     </div>
                     <div className="hidden sm:flex items-center gap-6">
                       {Object.entries(NODE_THEME).map(([type, theme]) => (
@@ -649,8 +653,9 @@ export default function GraphExplorerPage() {
                           </div>
                           <div className="text-right">
                             <span className="block text-indigo-400 text-lg font-black font-mono tracking-tighter leading-none">
-                              {item.score.toFixed(4)}
+                              {((item).percent || (item.score * 100)).toFixed(1)}%
                             </span>
+                            <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Power Index</span>
                           </div>
                         </div>
                       ))}

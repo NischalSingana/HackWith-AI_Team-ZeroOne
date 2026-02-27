@@ -414,11 +414,15 @@ def compute_centrality(G: nx.MultiDiGraph, top_n: int = 10) -> Dict[str, Any]:
     pagerank_c = nx.pagerank(G, alpha=0.85, max_iter=200)
 
     def top_n_nodes(scores: dict, n: int) -> List[Dict[str, Any]]:
+        if not scores:
+            return []
+        max_score = max(scores.values()) if scores.values() else 1.0
         sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n]
         return [
             {
                 "node": node_id,
                 "score": round(score, 4),
+                "percent": round((score / max_score) * 100, 1) if max_score > 0 else 0,
                 "node_type": G.nodes[node_id].get("node_type", "Unknown"),
                 **{k: v for k, v in G.nodes[node_id].items() if k != "node_type" and v is not None},
             }
