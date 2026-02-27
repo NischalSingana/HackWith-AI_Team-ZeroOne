@@ -35,20 +35,6 @@ except ImportError as e:
     HAS_NETWORKX = False
     print(f"⚠️ NetworkX not available — analysis endpoints disabled: {e}")
 
-# ========== ML Predictions Setup ==========
-try:
-    from ml_predictions import (
-        train_severity_model,
-        predict_severity,
-        predict_hotspots as ml_predict_hotspots,
-        detect_anomalies,
-    )
-    HAS_ML = True
-    print("✅ ML predictions engine loaded")
-except ImportError as e:
-    HAS_ML = False
-    print(f"⚠️ ML predictions not available: {e}")
-
 # ========== Google Vision API Setup ==========
 from google.cloud import vision
 from google.oauth2 import service_account
@@ -114,9 +100,6 @@ def is_form_boilerplate_dense(text: str) -> bool:
     # If we find many labels but the text is short, it's probably just a form header
     return len(found_labels) >= 3 and len(text.strip()) < 500
 
-# ... (smart_extract_text updated logic below)
-
-
 # ========== FastAPI App ==========
 app = FastAPI(title="FIR Analysis AI Service")
 
@@ -170,7 +153,6 @@ class FIRData(BaseModel):
     severity: str
     location: Location
     victims: List[Victim] = []
-    victims: List[Victim] = []
     vehicles: List[Vehicle] = []
     confidence_score: float
     raw_text: Optional[str] = None
@@ -188,7 +170,6 @@ async def health():
         "translator": "enabled" if HAS_TRANSLATOR else "disabled",
         "neo4j": "enabled" if neo4j.is_connected else "disabled",
         "networkx": "enabled" if HAS_NETWORKX else "disabled",
-        "ml_predictions": "enabled" if HAS_ML else "disabled",
     }
 
 
@@ -274,16 +255,11 @@ async def process_fir(file: UploadFile = File(...)):
 
 # ========================================================================
 # SMART TEXT EXTRACTION
-# Strategy:
-#   1. Try pdfplumber first (FREE) for each page
-#   2. If text length < threshold → page is scanned → use Google Vision API
 # ========================================================================
 
 def smart_extract_text(pdf_path: str) -> str:
     """
-    Extract text from PDF using smart strategy:
-    - Typed pages: pdfplumber (free)
-    - Scanned pages: Google Vision API (OCR)
+    Extract text from PDF using smart strategy.
     """
     all_text = ""
     typed_pages = 0
@@ -337,49 +313,30 @@ def smart_extract_text(pdf_path: str) -> str:
 
 
 def ocr_page_with_vision(page) -> str:
-    """
-    Convert a pdfplumber page to an image and send to Google Vision API for OCR.
-    Returns extracted text or empty string if fails.
-    """
     if not vision_client:
-        print("   ⚠️ Vision API not available — skipping OCR")
         return ""
 
     try:
-        # Convert page to high-res image
         page_image = page.to_image(resolution=300)
-        pil_image = page_image.original  # PIL Image object
+        pil_image = page_image.original
 
-        # Convert PIL Image to bytes for Vision API
         img_byte_arr = io.BytesIO()
         pil_image.save(img_byte_arr, format='PNG')
         img_bytes = img_byte_arr.getvalue()
 
-        # Send to Google Vision API
         image = vision.Image(content=img_bytes)
-        # Add language hints for English and Telugu
         image_context = vision.ImageContext(language_hints=["en", "te"])
         response = vision_client.text_detection(image=image, image_context=image_context)
 
         if response.error.message:
-            err_msg = response.error.message.lower()
-            if "billing" in err_msg:
-                 print("   ❌ Vision API: BILLING ERROR! OCR blocked. Enable billing at: https://console.cloud.google.com/billing")
-                 raise Exception("Google Vision API Billing Disabled. Please enable billing in your Google Cloud Console.")
-            print(f"   ❌ Vision API error: {response.error.message}")
             return ""
 
         texts = response.text_annotations
         if texts:
-            full_text = texts[0].description
-            print(f"   ✅ Vision API returned {len(full_text)} chars")
-            return full_text
-        else:
-            print("   ⚠️ Vision API found no text in this page")
-            return ""
+            return texts[0].description
+        return ""
 
-    except Exception as e:
-        print(f"   ❌ Vision API OCR failed: {e}")
+    except Exception:
         return ""
 
 
@@ -388,28 +345,20 @@ def ocr_page_with_vision(page) -> str:
 # ========================================================================
 
 def is_telugu(text: str) -> bool:
-    """Detect if text is in Telugu."""
-    if not HAS_TRANSLATOR:
-        return False
+    if not HAS_TRANSLATOR: return False
     try:
-        lang = detect(text[:500])  # Only check first 500 chars
-        return lang == 'te'
+        return detect(text[:500]) == 'te'
     except:
         return False
 
-
 def translate_text(text: str) -> str:
-    """Translate text from Telugu to English in chunks (5000 char limit per call)."""
     try:
         translator = GoogleTranslator(source='te', target='en')
         chunk_size = 4500
         chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-        translated_chunks = []
-        for chunk in chunks:
-            translated_chunks.append(translator.translate(chunk))
+        translated_chunks = [translator.translate(chunk) for chunk in chunks]
         return " ".join(translated_chunks)
-    except Exception as e:
-        print(f"⚠️ Translation error: {e}")
+    except:
         return text
 
 
@@ -418,9 +367,6 @@ def translate_text(text: str) -> str:
 # ========================================================================
 
 def extract_information(text: str) -> FIRData:
-    """Extract structured FIR data from text using regex and SpaCy NER."""
-
-    # --- Refined filters for specific headers ---
     BLACKLIST_PHRASES = [
         "reasons for delay in reporting", "delay in reporting", "complainant", "informant",
         "first information report", "ion report", "p.s.", "police station", "under section",
@@ -431,7 +377,6 @@ def extract_information(text: str) -> FIRData:
     # 1. FIR Number
     fir_patterns = [
         r"FIR\s*No\.?\s*[:\-]?\s*([A-Z0-9/\-]+)",
-        r"First\s*Information\s*Report.*?No\.?\s*[:\-]?\s*([A-Z0-9/\-]+)",
         r"Crime\s*No\.?\s*[:\-]?\s*([A-Z0-9/\-]+)",
     ]
     fir_number = "UNKNOWN"
@@ -461,21 +406,18 @@ def extract_information(text: str) -> FIRData:
 
     loc_patterns = [
         r"(?:Location|Place|Address|Near|At)\s*[:\-]?\s*(.+?)(?:\n|$)",
-        r"(?:Police\s*Station|PS)\s*[:\-]?\s*(.+?)(?:\n|$)",
     ]
     loc_address = ""
     for pattern in loc_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             val = match.group(1).strip()
-            # Safety check against blacklist
             if not any(bp in val.lower() for bp in BLACKLIST_PHRASES if len(bp) > 5):
                 loc_address = val[:200]
                 break
 
-    if not loc_address or any(bp in loc_address.lower() for bp in ["first information", "p.s.", "ion report"]):
+    if not loc_address:
         loc_address = ", ".join(locations[:3]) if locations else "Vijayawada"
-
 
     location_obj = Location(
         address=loc_address,
@@ -496,8 +438,7 @@ def extract_information(text: str) -> FIRData:
     cause = "Under Investigation"
     cause_patterns = [
         r"(?:cause|reason)\s*[:\-]?\s*(.+?)(?:\n|\.)",
-        r"(?:due to|because of|owing to)\s+(.+?)(?:\n|\.)",
-        r"(over\s*speed(?:ing)?|rash\s*driv(?:ing)?|drunk\s*driv(?:ing)?|negligent|signal\s*jump(?:ing)?|wrong\s*side)",
+        r"(over\s*speed(?:ing)?|rash\s*driv(?:ing)?|drunk\s*driv(?:ing)?|negligent)",
     ]
     for pattern in cause_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -510,16 +451,10 @@ def extract_information(text: str) -> FIRData:
     if cause == "Under Investigation" or any(bp in cause.lower() for bp in BLACKLIST_PHRASES):
         cause = "Under Investigation"
 
-
     # 6. Victims
     victims = []
     age_matches = re.findall(r"Age\s*[:\-]?\s*(\d{1,3})", text, re.IGNORECASE)
     gender_matches = re.findall(r"Gender\s*[:\-]?\s*(Male|Female)", text, re.IGNORECASE)
-
-    # Also look for "X year old male/female" patterns
-    yrs_matches = re.findall(r"(\d{1,3})\s*(?:years?\s*old|yrs?)", text, re.IGNORECASE)
-    if yrs_matches and not age_matches:
-        age_matches = yrs_matches
 
     for i in range(max(len(age_matches), len(gender_matches), 1)):
         if i < len(age_matches) or i < len(gender_matches):
@@ -533,8 +468,6 @@ def extract_information(text: str) -> FIRData:
     vehicles = []
     veh_patterns = [
         r"(?:Vehicle\s*No\.?\s*[:\-]?\s*|Registration\s*No\.?\s*[:\-]?\s*|Reg\.?\s*No\.?\s*[:\-]?\s*)([A-Z]{2}\s?\d{1,2}\s?[A-Z]{0,3}\s?\d{1,4})",
-        r"\b([A-Z]{2}\d{2}[A-Z]{1,2}\d{4})\b",  # AP21AB1234
-        r"\b([A-Z]{2}\s\d{2}\s[A-Z]{1,2}\s\d{4})\b",  # AP 21 AB 1234
     ]
     veh_numbers_found = set()
     for pattern in veh_patterns:
@@ -547,28 +480,6 @@ def extract_information(text: str) -> FIRData:
     for v in veh_numbers_found:
         vehicles.append(Vehicle(type="Unknown", number=v, driver_name="Unknown"))
 
-    # Vehicle type detection
-    vtype_patterns = {
-        "Car": r"\b(?:car|sedan|hatchback|swift|innova|ertiga)\b",
-        "Bike": r"\b(?:bike|motorcycle|two[\s\-]?wheeler|pulsar|splendor|activa|scooty|scooter)\b",
-        "Auto": r"\b(?:auto[\s\-]?rickshaw|auto)\b",
-        "Bus": r"\b(?:bus|rtc)\b",
-        "Truck": r"\b(?:truck|lorry|tipper)\b",
-        "Tractor": r"\b(?:tractor)\b",
-    }
-    detected_types = []
-    for vtype, pattern in vtype_patterns.items():
-        if re.search(pattern, text, re.IGNORECASE):
-            detected_types.append(vtype)
-
-    # Assign types to vehicles if we detected them
-    for i, vtype in enumerate(detected_types):
-        if i < len(vehicles):
-            vehicles[i].type = vtype
-        else:
-            vehicles.append(Vehicle(type=vtype, number=None, driver_name="Unknown"))
-
-    # 8. Calculate confidence score
     fields_found = sum([
         fir_number != "UNKNOWN",
         date_time != "UNKNOWN",
@@ -636,7 +547,7 @@ async def graph_ingest_batch(records: List[GraphIngestRequest]):
 
 @app.get("/graph/stats")
 async def graph_stats():
-    """Get graph database statistics (node/relationship counts by type)."""
+    """Get graph database statistics."""
     return get_graph_stats()
 
 
@@ -660,8 +571,7 @@ async def analysis_summary():
 @app.get("/analysis/centrality")
 async def analysis_centrality(top_n: int = 10):
     """
-    Compute centrality scores (degree, betweenness, PageRank) for all nodes.
-    Returns top-N most influential nodes by each metric.
+    Compute centrality scores for all nodes. Returns top-N most influential nodes.
     """
     if not HAS_NETWORKX:
         raise HTTPException(status_code=503, detail="NetworkX not available")
@@ -673,7 +583,6 @@ async def analysis_centrality(top_n: int = 10):
 async def analysis_communities():
     """
     Detect crime clusters using greedy modularity community detection.
-    Communities = groups of FIRs tightly linked by location, vehicle, or pattern.
     """
     if not HAS_NETWORKX:
         raise HTTPException(status_code=503, detail="NetworkX not available")
@@ -682,9 +591,9 @@ async def analysis_communities():
 
 
 @app.get("/analysis/hotspots")
-async def analysis_hotspots(top_n: int = 10):
+async def analysis_hotspots_api(top_n: int = 10):
     """
-    Rank locations by FIR count and weighted danger score (based on severity).
+    Rank locations by FIR count and weighted danger score.
     """
     if not HAS_NETWORKX:
         raise HTTPException(status_code=503, detail="NetworkX not available")
@@ -696,82 +605,11 @@ async def analysis_hotspots(top_n: int = 10):
 async def analysis_connections(node_a: str, node_b: str):
     """
     Find shortest path and alternative paths between any two nodes.
-    E.g., connect two FIR numbers to find hidden links via shared
-    locations, persons, or vehicles.
     """
     if not HAS_NETWORKX:
         raise HTTPException(status_code=503, detail="NetworkX not available")
     G = build_networkx_graph()
     return find_connections(node_a, node_b, G)
-
-
-# ========== ML Prediction API Endpoints ==========
-
-class SeverityPredictRequest(BaseModel):
-    fir_number: Optional[str] = None
-    incident_date: Optional[str] = None
-    cause: Optional[str] = None
-    victims: Optional[list] = []
-    vehicles: Optional[list] = []
-    confidence_score: Optional[float] = 0.0
-
-
-@app.post("/ml/train")
-async def ml_train():
-    """
-    Train the severity classification model using current graph data.
-    Re-train whenever new FIRs are ingested.
-    """
-    if not HAS_ML:
-        raise HTTPException(status_code=503, detail="ML not available")
-    if not HAS_NETWORKX:
-        raise HTTPException(status_code=503, detail="NetworkX not available")
-    G = build_networkx_graph()
-    result = train_severity_model(G)
-    return result
-
-
-@app.post("/ml/predict-severity")
-async def ml_predict_severity(data: SeverityPredictRequest):
-    """
-    Predict severity (Fatal / Grievous / Non-Fatal) for a given FIR.
-    Trains model automatically if not already done.
-    """
-    if not HAS_ML:
-        raise HTTPException(status_code=503, detail="ML not available")
-    G = build_networkx_graph() if HAS_NETWORKX else None
-    return predict_severity(data.dict(), G)
-
-
-@app.get("/ml/predict-hotspots")
-async def ml_hotspots(top_n: int = 10):
-    """
-    Predict and rank next likely accident hotspot locations using a
-    composite risk model (FIR history + severity + graph centrality).
-    """
-    if not HAS_ML:
-        raise HTTPException(status_code=503, detail="ML not available")
-    if not HAS_NETWORKX:
-        raise HTTPException(status_code=503, detail="NetworkX not available")
-    G = build_networkx_graph()
-    return ml_predict_hotspots(G, top_n=top_n)
-
-
-@app.get("/ml/detect-anomalies")
-async def ml_anomalies(contamination: float = 0.1):
-    """
-    Detect anomalous FIRs using Isolation Forest.
-    Anomalies have unusual combinations of time, location, victims, vehicles, etc.
-    contamination: expected fraction of anomalies (0.0 – 0.5, default 0.1)
-    """
-    if not HAS_ML:
-        raise HTTPException(status_code=503, detail="ML not available")
-    if not HAS_NETWORKX:
-        raise HTTPException(status_code=503, detail="NetworkX not available")
-    if not 0.01 <= contamination <= 0.5:
-        raise HTTPException(status_code=400, detail="contamination must be between 0.01 and 0.5")
-    G = build_networkx_graph()
-    return detect_anomalies(G, contamination=contamination)
 
 
 # ========== Run Server ==========
@@ -784,6 +622,5 @@ if __name__ == "__main__":
     print(f"   Translator: {'✅ Enabled' if HAS_TRANSLATOR else '❌ Disabled'}")
     print(f"   Neo4j:      {'✅ Enabled' if True else '❌ Disabled'}")
     print(f"   NetworkX:   {'✅ Enabled' if HAS_NETWORKX else '❌ Disabled'}")
-    print(f"   ML Models:  {'✅ Enabled' if HAS_ML else '❌ Disabled'}")
     print()
     uvicorn.run(app, host="0.0.0.0", port=8000)
