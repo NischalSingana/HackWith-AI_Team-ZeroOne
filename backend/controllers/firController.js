@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const { geocodeAddress } = require('../services/geocoder');
-const { uploadToR2, deleteFromR2, getFileStream, listR2Files, downloadR2ToLocal } = require('../services/r2Storage');
+const { uploadToR2, deleteFromR2, getFileStream, listR2Files, downloadR2ToLocal, getSignedUrlForFile } = require('../services/r2Storage');
 const { extractPoliceStation } = require('../utils/policeStationResolver');
 
 // ... (existing code)
@@ -615,21 +615,26 @@ exports.downloadFIR = async (req, res) => {
                 }
             }
 
-            console.log(`☁️ Proxying from R2: ${key}`);
+            console.log(`☁️  Generating signed URL for R2: ${key}`);
             try {
+                // Generate a temporary signed URL (valid for 15 minutes)
+                const signedUrl = await getSignedUrlForFile(key, 900);
+                if (signedUrl) {
+                    console.log(`✅ Redirecting to signed URL for cross-device access`);
+                    return res.redirect(signedUrl);
+                }
+                
+                // Fallback to proxying if signed URL generation fails
                 const stream = await getFileStream(key);
                 if (stream) {
                     res.setHeader('Content-Type', 'application/pdf');
-                    // Clean up filename for header
                     res.setHeader('Content-Disposition', `inline; filename="FIR_${fir_number.replace(/\//g, '_')}.pdf"`);
                     
                     if (stream.pipe) {
                         return stream.pipe(res);
                     } else {
                         const chunks = [];
-                        for await (const chunk of stream) {
-                            chunks.push(chunk);
-                        }
+                        for await (const chunk of stream) chunks.push(chunk);
                         return res.send(Buffer.concat(chunks));
                     }
                 }

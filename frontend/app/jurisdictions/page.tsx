@@ -9,8 +9,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, 
     ResponsiveContainer, Tooltip as RechartsTooltip, Cell
 } from 'recharts';
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF } from "@react-google-maps/api";
-import { GOOGLE_MAPS_LIBRARIES } from "@/lib/google-maps";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 import { API_BASE_URL } from "@/lib/api";
 
 interface JurisdictionData {
@@ -63,6 +62,15 @@ const SEVERITY_COLORS: Record<string, string> = {
     "Non-Fatal": "#3b82f6"
 };
 
+// Component to update map center dynamically
+function ReCenter({ center }: { center: [number, number] }) {
+    const map = useMap();
+    useEffect(() => {
+        map.setView(center, map.getZoom());
+    }, [center, map]);
+    return null;
+}
+
 export default function JurisdictionsPage() {
     const [selectedArea, setSelectedArea] = useState<string | null>(null);
     const [data, setData] = useState<JurisdictionData | null>(null);
@@ -75,16 +83,9 @@ export default function JurisdictionsPage() {
     const [sortBy, setSortBy] = useState<SortOption>('accidents-high');
     const [allMarkers, setAllMarkers] = useState<AccidentMarker[]>([]);
     const [mapLoading, setMapLoading] = useState(true);
-    const [selectedIncident, setSelectedIncident] = useState<AccidentMarker | null>(null);
 
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const { isLoaded } = useJsApiLoader({
-        id: "google-map-script",
-        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-        libraries: GOOGLE_MAPS_LIBRARIES,
-    });
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -197,23 +198,12 @@ export default function JurisdictionsPage() {
         return activeMarkers.filter((marker) => marker.lat !== null && marker.lng !== null);
     }, [activeMarkers]);
 
-    const mapCenter = useMemo(() => {
-        if (mappableMarkers.length === 0) return { lat: 16.5062, lng: 80.6200 };
+    const mapCenter: [number, number] = useMemo(() => {
+        if (mappableMarkers.length === 0) return [16.5062, 80.6200];
         const latSum = mappableMarkers.reduce((sum, m) => sum + (m.lat || 0), 0);
         const lngSum = mappableMarkers.reduce((sum, m) => sum + (m.lng || 0), 0);
-        return {
-            lat: latSum / mappableMarkers.length,
-            lng: lngSum / mappableMarkers.length
-        };
+        return [latSum / mappableMarkers.length, lngSum / mappableMarkers.length];
     }, [mappableMarkers]);
-
-    const mapOptions = useMemo(() => ({
-        disableDefaultUI: false,
-        zoomControl: true,
-        streetViewControl: false,
-        mapTypeControl: false,
-        fullscreenControl: true,
-    }), []);
 
     if (loadingList) {
         return (
@@ -356,7 +346,7 @@ export default function JurisdictionsPage() {
             )}
 
             {/* Jurisdiction Map */}
-            <div className="h-[380px] rounded-2xl border border-slate-700 overflow-hidden relative glass w-full">
+            <div className="h-[380px] rounded-2xl border border-slate-700 overflow-hidden relative glass w-full z-0">
                 <div className="absolute top-4 left-4 z-10 glass px-5 py-3 rounded-xl border border-slate-600 shadow-2xl flex items-center gap-6">
                     <div>
                         <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Police Station</p>
@@ -372,50 +362,49 @@ export default function JurisdictionsPage() {
                     </div>
                 </div>
 
-                {(!isLoaded || mapLoading) ? (
+                {mapLoading ? (
                     <div className="w-full h-full bg-slate-900/80 flex items-center justify-center">
                         <div className="w-8 h-8 border-4 border-slate-700 border-t-indigo-500 rounded-full animate-spin" />
                     </div>
                 ) : (
-                    <GoogleMap
-                        mapContainerStyle={{ width: "100%", height: "100%" }}
+                    <MapContainer
                         center={mapCenter}
                         zoom={mappableMarkers.length === 0 ? 11 : 13}
-                        options={mapOptions}
-                        onClick={() => setSelectedIncident(null)}
+                        style={{ width: "100%", height: "100%", background: "#0f172a" }}
+                        zoomControl={false}
                     >
+                        <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        />
+                        
+                        <ReCenter center={mapCenter} />
+
                         {mappableMarkers.map((marker) => (
-                            <MarkerF
+                            <CircleMarker
                                 key={marker.id}
-                                position={{ lat: marker.lat!, lng: marker.lng! }}
-                                onClick={() => setSelectedIncident(marker)}
-                                icon={{
-                                    path: google.maps.SymbolPath.CIRCLE,
+                                center={[marker.lat!, marker.lng!]}
+                                radius={marker.severity === "Fatal" ? 10 : 7}
+                                pathOptions={{
                                     fillColor: SEVERITY_COLORS[marker.severity] || SEVERITY_COLORS.Unknown,
                                     fillOpacity: 0.9,
-                                    strokeWeight: 2,
-                                    strokeColor: "#ffffff",
-                                    scale: marker.severity === "Fatal" ? 10 : 7,
+                                    color: "#ffffff",
+                                    weight: 2,
                                 }}
-                            />
-                        ))}
-
-                        {selectedIncident && selectedIncident.lat && selectedIncident.lng && (
-                            <InfoWindowF
-                                position={{ lat: selectedIncident.lat, lng: selectedIncident.lng }}
-                                onCloseClick={() => setSelectedIncident(null)}
                             >
-                                <div className="p-2 min-w-[220px] text-slate-900">
-                                    <h3 className="font-bold border-b pb-1 mb-2">FIR #{selectedIncident.fir_number}</h3>
-                                    <div className="space-y-1 text-sm">
-                                        <p><span className="font-medium">Severity:</span> {selectedIncident.severity}</p>
-                                        <p><span className="font-medium">Area:</span> {selectedIncident.area || 'Unknown Area'}</p>
-                                        <p><span className="font-medium">Address:</span> {selectedIncident.address || 'Unknown'}</p>
+                                <Popup>
+                                    <div className="p-2 min-w-[200px] text-slate-900">
+                                        <h3 className="font-bold border-b pb-1 mb-2">FIR #{marker.fir_number}</h3>
+                                        <div className="space-y-1 text-sm">
+                                            <p><span className="font-medium">Severity:</span> {marker.severity}</p>
+                                            <p><span className="font-medium">Area:</span> {marker.area || 'Unknown Area'}</p>
+                                            <p><span className="font-medium">Address:</span> {marker.address || 'Unknown'}</p>
+                                        </div>
                                     </div>
-                                </div>
-                            </InfoWindowF>
-                        )}
-                    </GoogleMap>
+                                </Popup>
+                            </CircleMarker>
+                        ))}
+                    </MapContainer>
                 )}
             </div>
 

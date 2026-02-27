@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF, HeatmapLayerF } from "@react-google-maps/api";
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from "react-leaflet";
+import L from "leaflet";
 import { API_BASE_URL } from "@/lib/api";
-import { GOOGLE_MAPS_LIBRARIES } from "@/lib/google-maps";
+
+// Fix for default marker icons in Leaflet with Next.js
+const DefaultIcon = L.icon({
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface AccidentMarker {
   id: number;
@@ -36,24 +45,16 @@ const SEVERITY_COLORS: Record<string, string> = {
   Unknown: "#6b7280",
 };
 
-// Premium Dark Theme for Google Maps
-const mapStyles = [
-  { elementType: "geometry", stylers: [{ color: "#0f172a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0f172a" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#e2e8f0" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1e293b" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#334155" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#020617" }] },
-];
-
-const mapContainerStyle = {
-  height: "600px",
-  width: "100%",
-};
-
 const defaultCenter = { lat: 16.60, lng: 80.45 };
+
+// Component to update map center dynamically
+function ReCenter({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+  return null;
+}
 
 export default function AccidentMap() {
   const router = useRouter();
@@ -61,14 +62,6 @@ export default function AccidentMap() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
-  const [selectedMarker, setSelectedMarker] = useState<AccidentMarker | null>(null);
-  const [heatmapData, setHeatmapData] = useState<google.maps.visualization.WeightedLocation[]>([]);
-
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-    libraries: GOOGLE_MAPS_LIBRARIES,
-  });
 
   // Load data
   useEffect(() => {
@@ -85,47 +78,20 @@ export default function AccidentMap() {
       });
   }, []);
 
-  // Load heatmap data if toggled
-  useEffect(() => {
-    if (showHeatmap && isLoaded && heatmapData.length === 0) {
-      fetch(`${API_BASE_URL}/map/heatmap`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.data) {
-            const formatted = data.data.map((p: [number, number, number]) => ({
-              location: new google.maps.LatLng(p[0], p[1]),
-              weight: p[2],
-            }));
-            setHeatmapData(formatted);
-          }
-        })
-        .catch((err) => console.error("Heatmap error:", err));
-    }
-  }, [showHeatmap, isLoaded, heatmapData.length]);
-
-  const mapOptions = useMemo(() => ({
-    styles: mapStyles,
-    disableDefaultUI: false,
-    zoomControl: true,
-    streetViewControl: false,
-    mapTypeControl: false,
-    fullscreenControl: true,
-  }), []);
-
-  const onMarkerClick = useCallback((marker: AccidentMarker) => {
-    setSelectedMarker(marker);
-  }, []);
-
-  if (!isLoaded) {
+  if (loading) {
     return (
-      <div className="h-[600px] w-100 flex items-center justify-center bg-slate-950 rounded-xl border border-slate-800 shadow-2xl">
+      <div className="h-[600px] w-full flex items-center justify-center bg-slate-950 rounded-xl border border-slate-800 shadow-2xl">
         <div className="flex flex-col items-center gap-4">
             <div className="animate-spin w-8 h-8 border-4 border-slate-800 border-t-indigo-500 rounded-full" />
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Warping Matrix...</p>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Initializing Tactical Grid...</p>
         </div>
       </div>
     );
   }
+
+  const center: [number, number] = mapData?.center 
+    ? [mapData.center.lat, mapData.center.lng] 
+    : [defaultCenter.lat, defaultCenter.lng];
 
   return (
     <div className="space-y-6">
@@ -138,18 +104,6 @@ export default function AccidentMap() {
               {mapData.count} locations identified
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowHeatmap(!showHeatmap)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg ${
-              showHeatmap
-                ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600"
-            }`}
-          >
-            {showHeatmap ? "🔥 Heatmap ON" : "Heatmap OFF"}
-          </button>
         </div>
       </div>
 
@@ -164,70 +118,57 @@ export default function AccidentMap() {
       </div>
 
       {/* Map Container */}
-      <div className="relative rounded-xl overflow-hidden border border-slate-700 shadow-2xl glass-effect">
-        {loading && (
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-10 text-slate-400">
-            <div className="animate-spin w-8 h-8 border-3 border-slate-500 border-t-blue-500 rounded-full mb-2" />
-            <span>Fetching markers...</span>
-          </div>
-        )}
+      <div className="relative rounded-xl overflow-hidden border border-slate-700 shadow-2xl glass-effect z-0" style={{ height: '600px' }}>
         {error && (
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-10 text-red-400">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[1000] text-red-400">
             {error}
           </div>
         )}
         
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          center={mapData?.center || defaultCenter}
+        <MapContainer
+          center={center}
           zoom={12}
-          options={mapOptions}
+          style={{ height: "100%", width: "100%", background: "#0f172a" }}
+          zoomControl={false}
         >
-          {showHeatmap && heatmapData.length > 0 && (
-            <HeatmapLayerF
-              data={heatmapData}
-              options={{ radius: 30, opacity: 0.6 }}
-            />
-          )}
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
+          
+          <ReCenter center={center} />
 
-          {!showHeatmap && (mapData?.data || []).map((marker: AccidentMarker) => (
-            <MarkerF
+          {(mapData?.data || []).map((marker: AccidentMarker) => (
+            <CircleMarker
               key={marker.id}
-              position={{ lat: marker.lat, lng: marker.lng }}
-              onClick={() => onMarkerClick(marker)}
-              icon={{
-                path: google.maps.SymbolPath.CIRCLE,
+              center={[marker.lat, marker.lng]}
+              radius={marker.severity === "Fatal" ? 8 : 6}
+              pathOptions={{
                 fillColor: SEVERITY_COLORS[marker.severity] || SEVERITY_COLORS.Unknown,
-                fillOpacity: 0.9,
-                strokeWeight: 2,
-                strokeColor: "#ffffff",
-                scale: marker.severity === "Fatal" ? 10 : 8,
+                fillOpacity: 0.8,
+                color: "#ffffff",
+                weight: 1,
               }}
-            />
-          ))}
-
-          {selectedMarker && (
-            <InfoWindowF
-              position={{ lat: selectedMarker.lat, lng: selectedMarker.lng }}
-              onCloseClick={() => setSelectedMarker(null)}
             >
-              <div className="p-2 min-w-[200px] text-slate-900">
-                <h3 className="font-bold border-b pb-1 mb-2">FIR #{selectedMarker.fir_number}</h3>
-                <div className="space-y-1 text-sm">
-                  <p><span className="font-medium">Severity:</span> {selectedMarker.severity}</p>
-                  <p><span className="font-medium">Cause:</span> {selectedMarker.cause}</p>
-                  <p><span className="font-medium">Area:</span> {selectedMarker.area}</p>
+              <Popup>
+                <div className="p-2 min-w-[180px] text-slate-900 font-sans">
+                  <h3 className="font-bold border-b pb-1 mb-2 text-xs">FIR #{marker.fir_number}</h3>
+                  <div className="space-y-1 text-[11px]">
+                    <p><span className="font-semibold">Severity:</span> {marker.severity}</p>
+                    <p><span className="font-semibold">Cause:</span> {marker.cause}</p>
+                    <p><span className="font-semibold">Area:</span> {marker.area}</p>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/accidents/${marker.id}`)}
+                    className="mt-3 w-full bg-indigo-600 text-white rounded py-1.5 text-[10px] font-bold hover:bg-indigo-700 transition-colors"
+                  >
+                    View Full Analysis
+                  </button>
                 </div>
-                <button
-                  onClick={() => router.push(`/accidents/${selectedMarker.id}`)}
-                  className="mt-3 w-full bg-blue-600 text-white rounded py-1.5 text-xs font-bold hover:bg-blue-700"
-                >
-                  View Full Analysis
-                </button>
-              </div>
-            </InfoWindowF>
-          )}
-        </GoogleMap>
+              </Popup>
+            </CircleMarker>
+          ))}
+        </MapContainer>
       </div>
 
       {/* Stats Cards */}

@@ -9,6 +9,7 @@
  */
 
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
 const path = require('path');
 
@@ -215,4 +216,28 @@ async function downloadR2ToLocal(key, localDir = '/tmp') {
   }
 }
 
-module.exports = { uploadToR2, deleteFromR2, getFileStream, listR2Files, downloadR2ToLocal };
+/**
+ * Generate a presigned URL for a file in R2
+ * @param {string} key - R2 object key
+ * @param {number} expiresIn - Expiration in seconds (default: 3600 / 1 hour)
+ * @returns {Promise<string|null>}
+ */
+async function getSignedUrlForFile(key, expiresIn = 3600) {
+  const client = getR2Client();
+  if (!client || !key) return null;
+
+  try {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+    });
+
+    const url = await getSignedUrl(client, command, { expiresIn });
+    return url;
+  } catch (err) {
+    console.error(`❌ R2 signed URL error for ${key}:`, err.message);
+    return null;
+  }
+}
+
+module.exports = { uploadToR2, deleteFromR2, getFileStream, listR2Files, downloadR2ToLocal, getSignedUrlForFile };

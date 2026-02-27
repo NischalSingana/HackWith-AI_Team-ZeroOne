@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { API_BASE_URL } from "@/lib/api";
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF } from "@react-google-maps/api";
-import { GOOGLE_MAPS_LIBRARIES } from "@/lib/google-maps";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 import { 
   MapPin, Search, Activity, RefreshCw, 
   Shield, AlertTriangle, BarChart2, Briefcase, ArrowUpDown
@@ -57,18 +56,16 @@ const SEVERITY_COLORS: Record<string, string> = {
   Unknown: "#6b7280",
 };
 
-const mapStyles = [
-  { elementType: "geometry", stylers: [{ color: "#0f172a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0f172a" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#e2e8f0" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1e293b" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#334155" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#020617" }] },
-];
-
 type SortOption = 'accidents-high' | 'accidents-low' | 'fatality-high' | 'alphabetical';
+
+// Component to update map center dynamically
+function ReCenter({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+      map.setView(center, map.getZoom());
+  }, [center, map]);
+  return null;
+}
 
 export default function AreaAnalysisPage() {
   const [allMarkers, setAllMarkers] = useState<AccidentMarker[]>([]);
@@ -76,17 +73,10 @@ export default function AreaAnalysisPage() {
   const [selectedStation, setSelectedStation] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>('accidents-high');
-  const [selectedIncident, setSelectedIncident] = useState<AccidentMarker | null>(null);
 
   const [aiData, setAiData] = useState<JurisdictionData | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-    libraries: GOOGLE_MAPS_LIBRARIES,
-  });
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/map/locations?all=true`)
@@ -199,28 +189,16 @@ export default function AreaAnalysisPage() {
     return activeMarkers.filter(m => m.lat !== null && m.lng !== null);
   }, [activeMarkers]);
 
-  const mapCenter = useMemo(() => {
-    if (mappableMarkers.length === 0) return { lat: 16.5062, lng: 80.6200 };
+  const mapCenter: [number, number] = useMemo(() => {
+    if (mappableMarkers.length === 0) return [16.5062, 80.6200];
     let latSum = 0;
     let lngSum = 0;
     mappableMarkers.forEach(m => {
       latSum += m.lat!;
       lngSum += m.lng!;
     });
-    return {
-      lat: latSum / mappableMarkers.length,
-      lng: lngSum / mappableMarkers.length
-    };
+    return [latSum / mappableMarkers.length, lngSum / mappableMarkers.length];
   }, [mappableMarkers]);
-
-  const mapOptions = useMemo(() => ({
-    styles: mapStyles,
-    disableDefaultUI: false,
-    zoomControl: true,
-    streetViewControl: false,
-    mapTypeControl: false,
-    fullscreenControl: true,
-  }), []);
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] min-h-[700px] overflow-hidden">
@@ -282,7 +260,7 @@ export default function AreaAnalysisPage() {
             {filteredStations.map(({ area, total, fatalityRate }) => (
               <button
                 key={area}
-                onClick={() => { setSelectedStation(area); setSelectedIncident(null); }}
+                onClick={() => { setSelectedStation(area); }}
                 className={`w-full text-left px-4 py-3 rounded-xl mb-1 transition-colors flex justify-between items-center ${
                   selectedStation === area 
                     ? "bg-teal-500/20 text-teal-300 font-medium border border-teal-500/30" 
@@ -305,7 +283,7 @@ export default function AreaAnalysisPage() {
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-6">
           
           {/* Map Section */}
-          <div className="h-[400px] flex-shrink-0 rounded-2xl border border-slate-700 overflow-hidden relative glass w-full">
+          <div className="h-[400px] flex-shrink-0 rounded-2xl border border-slate-700 overflow-hidden relative glass w-full z-0">
             <div className="absolute top-4 left-4 z-10 glass px-6 py-4 rounded-xl border border-slate-600 shadow-2xl flex items-center gap-6">
               <div>
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Area</p>
@@ -332,59 +310,58 @@ export default function AreaAnalysisPage() {
               </div>
             </div>
 
-            {(!isLoaded || loading) ? (
+            {loading ? (
               <div className="w-full h-full bg-slate-900/80 flex items-center justify-center">
                 <div className="w-8 h-8 border-4 border-slate-700 border-t-teal-500 rounded-full animate-spin" />
               </div>
             ) : (
-              <GoogleMap
-                mapContainerStyle={{ width: "100%", height: "100%" }}
+              <MapContainer
                 center={mapCenter}
                 zoom={mappableMarkers.length === 0 ? 11 : 13}
-                options={mapOptions}
-                onClick={() => setSelectedIncident(null)}
+                style={{ width: "100%", height: "100%", background: "#0f172a" }}
+                zoomControl={false}
               >
-                {mappableMarkers.map((marker) => (
-                  <MarkerF
-                    key={marker.id}
-                    position={{ lat: marker.lat!, lng: marker.lng! }}
-                    onClick={() => setSelectedIncident(marker)}
-                    icon={{
-                      path: google.maps.SymbolPath.CIRCLE,
-                      fillColor: SEVERITY_COLORS[marker.severity] || SEVERITY_COLORS.Unknown,
-                      fillOpacity: 0.9,
-                      strokeWeight: 2,
-                      strokeColor: "#ffffff",
-                      scale: marker.severity === "Fatal" ? 10 : 7,
-                    }}
+                  <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                      url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                   />
-                ))}
+                  
+                  <ReCenter center={mapCenter} />
 
-                {selectedIncident && selectedIncident.lat && selectedIncident.lng && (
-                  <InfoWindowF
-                    position={{ lat: selectedIncident.lat, lng: selectedIncident.lng }}
-                    onCloseClick={() => setSelectedIncident(null)}
+                {mappableMarkers.map((marker) => (
+                  <CircleMarker
+                    key={marker.id}
+                    center={[marker.lat!, marker.lng!]}
+                    radius={marker.severity === "Fatal" ? 10 : 7}
+                    pathOptions={{
+                        fillColor: SEVERITY_COLORS[marker.severity] || SEVERITY_COLORS.Unknown,
+                        fillOpacity: 0.9,
+                        color: "#ffffff",
+                        weight: 2,
+                    }}
                   >
-                    <div className="p-2 min-w-[200px] text-slate-900">
-                      <h3 className="font-bold border-b pb-1 mb-2">FIR #{selectedIncident.fir_number}</h3>
-                      <div className="space-y-1 text-sm">
-                        <p><span className="font-medium">Severity:</span> {selectedIncident.severity}</p>
-                        <p><span className="font-medium">Date:</span> {new Date(selectedIncident.incident_date).toLocaleDateString()}</p>
-                        <p><span className="font-medium">Address:</span> {selectedIncident.address}</p>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.location.href = `/accidents/${selectedIncident.id}`;
-                        }}
-                        className="mt-3 w-full bg-slate-900 text-white rounded py-1.5 text-xs font-bold hover:bg-slate-800 transition-colors"
-                      >
-                        View Report
-                      </button>
-                    </div>
-                  </InfoWindowF>
-                )}
-              </GoogleMap>
+                      <Popup>
+                        <div className="p-2 min-w-[200px] text-slate-900">
+                          <h3 className="font-bold border-b pb-1 mb-2">FIR #{marker.fir_number}</h3>
+                          <div className="space-y-1 text-sm">
+                            <p><span className="font-medium">Severity:</span> {marker.severity}</p>
+                            <p><span className="font-medium">Date:</span> {new Date(marker.incident_date).toLocaleDateString()}</p>
+                            <p><span className="font-medium">Address:</span> {marker.address}</p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              window.location.href = `/accidents/${marker.id}`;
+                            }}
+                            className="mt-3 w-full bg-slate-900 text-white rounded py-1.5 text-xs font-bold hover:bg-slate-800 transition-colors"
+                          >
+                            View Report
+                          </button>
+                        </div>
+                      </Popup>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
             )}
           </div>
 
