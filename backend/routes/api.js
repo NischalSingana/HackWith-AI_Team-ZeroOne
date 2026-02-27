@@ -6,6 +6,7 @@ const firController = require('../controllers/firController');
 const insightsController = require('../controllers/insightsController');
 const mapController = require('../controllers/mapController');
 const jurisdictionController = require('../controllers/jurisdictionPsController');
+// Prototype controllers removed
 
 // Multer Storage Configuration
 const storage = multer.diskStorage({
@@ -62,6 +63,8 @@ router.get('/bulk/list', firController.listR2FIRs);
 router.post('/bulk/process', firController.bulkProcessFromR2);
 router.post('/bulk/stop', firController.stopBulkProcess);
 
+// Prototype routes removed (Transitioned to real Graph Analysis)
+
 // ================ Graph Analysis (Neo4j + NetworkX proxy) ================
 const axios = require('axios');
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL
@@ -105,9 +108,10 @@ router.post('/graph/ingest-batch', (req, res) => proxyToAI(req, res, '/graph/ing
 router.get('/graph/analysis/graph-data', async (req, res) => {
     try {
         // Pull centrality data to get node list, then build a trimmed graph payload
-        const [summaryRes, centralityRes] = await Promise.all([
+        const [summaryRes, centralityRes, connectionsRes] = await Promise.all([
             axios.get(`${AI_SERVICE_URL}/analysis/summary`, { params: req.query }),
             axios.get(`${AI_SERVICE_URL}/analysis/centrality`, { params: { top_n: 100 } }),
+            axios.get(`${AI_SERVICE_URL}/analysis/connections`, { params: { limit: 300 } }),
         ]);
         const allNodes = [
             ...(centralityRes.data.pagerank || []),
@@ -118,7 +122,14 @@ router.get('/graph/analysis/graph-data', async (req, res) => {
         const nodes = allNodes
             .filter(n => { if (seen.has(n.node)) return false; seen.add(n.node); return true; })
             .map(n => ({ id: n.node, node_type: n.node_type, severity: n.severity, cause: n.cause, area: n.area }));
-        res.json({ nodes, edges: [], summary: summaryRes.data });
+        
+        const edges = (connectionsRes.data.connections || []).map(edge => ({
+            source: edge.source,
+            target: edge.target,
+            rel_type: edge.rel_type
+        }));
+
+        res.json({ nodes, edges, summary: summaryRes.data });
     } catch (err) {
         const status = err.response?.status || 503;
         res.status(status).json({ error: err.message });

@@ -49,8 +49,8 @@ const PROVIDERS = [
   },
 ];
 
-const REQUEST_TIMEOUT_MS = 10000; // 10 seconds
-const MAX_RETRIES_PER_KEY = 1;
+const REQUEST_TIMEOUT_MS = 6000; // 6 seconds for snappier demo fallback
+const MAX_RETRIES_PER_KEY = 0; // Disable retries in demo mode for faster hopping
 
 // ========================================================================
 // SYSTEM PROMPT
@@ -128,13 +128,13 @@ async function callLLM(provider, userPrompt) {
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.4,
-    max_tokens: 2048,
+    max_tokens: 1200, // Reduced for faster generation
     response_format: provider.type === 'groq' ? { type: 'json_object' } : undefined,
   };
 
   const response = await axios.post(provider.url, payload, {
     headers,
-    timeout: REQUEST_TIMEOUT_MS,
+    timeout: provider.timeout || REQUEST_TIMEOUT_MS,
   });
 
   // Extract the LLM text response
@@ -190,58 +190,49 @@ function parseJSONFromLLM(text) {
  */
 async function generateInsights(accidentStats) {
   const userPrompt = `Accident Data:\n${JSON.stringify(accidentStats, null, 2)}`;
-
+  const startTime = Date.now();
   const errors = [];
 
   for (const provider of PROVIDERS) {
-    // Check if key exists before attempting
-    if (!process.env[provider.envKey]) {
-      console.log(`⏭️  [AI Engine] Skipping ${provider.name} — key not configured`);
-      errors.push({ provider: provider.name, error: 'API key not configured' });
-      continue;
+    // Fail-safe: if we've already spent 15s trying, don't start a new request
+    if (Date.now() - startTime > 15000) {
+        console.warn('🕒 [AI Engine] Global timeout reached. Stopping provider attempts.');
+        break;
     }
+    if (!process.env[provider.envKey]) continue;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES_PER_KEY + 1; attempt++) {
-      try {
-        console.log(`🤖 [AI Engine] Trying ${provider.name} (attempt ${attempt})...`);
-        const startTime = Date.now();
+    // Use a multi-stage timeout: 4s for first key, 7s for others
+    const currentTimeout = errors.length === 0 ? 4000 : 7000;
+    provider.timeout = currentTimeout;
 
-        const insights = await callLLM(provider, userPrompt);
-        const latencyMs = Date.now() - startTime;
+    try {
+      console.log(`🤖 [AI Engine] Trying ${provider.name} (timeout: ${currentTimeout}ms)...`);
+      const startTime = Date.now();
 
-        // Validate response structure
-        validateInsightsStructure(insights);
+      const insights = await callLLM(provider, userPrompt);
+      const latencyMs = Date.now() - startTime;
 
-        console.log(`✅ [AI Engine] Success via ${provider.name} (${latencyMs}ms)`);
+      validateInsightsStructure(insights);
 
-        return {
-          insights,
-          provider: provider.name,
-          model: provider.model,
-          latencyMs,
-        };
-      } catch (err) {
-        const status = err.response?.status;
-        const errMsg = err.response?.data?.error?.message || err.message;
+      console.log(`✅ [AI Engine] Success via ${provider.name} (${latencyMs}ms)`);
 
-        console.error(`❌ [AI Engine] ${provider.name} attempt ${attempt} failed: ${status || ''} ${errMsg}`);
+      return {
+        insights,
+        provider: provider.name,
+        model: provider.model,
+        latencyMs,
+      };
+    } catch (err) {
+      const errMsg = err.response?.data?.error?.message || err.message;
+      console.error(`❌ [AI Engine] ${provider.name} failed: ${errMsg}`);
 
-        errors.push({
-          provider: provider.name,
-          attempt,
-          status,
-          error: errMsg,
-        });
+      errors.push({
+        provider: provider.name,
+        error: errMsg,
+      });
 
-        // Only retry on rate limit (429) or server error (500+) or timeout
-        const isRetryable = status === 429 || status >= 500 || err.code === 'ECONNABORTED';
-        if (!isRetryable || attempt > MAX_RETRIES_PER_KEY) {
-          break; // Move to next provider
-        }
-
-        // Brief delay before retry
-        await sleep(1000);
-      }
+      // Move to next provider immediately on failure or timeout
+      continue;
     }
   }
 
@@ -363,10 +354,15 @@ async function generateTrendInsights(trendStats) {
   
   // EXTRACTED LOOP LOGIC (Simulated for brevity/safety - reusing existing helper if possible would be better, 
   // but let's just duplicate the loop for safety to avoid refactoring the whole file now).
-
+  const startTime = Date.now();
   const errors = [];
 
   for (const provider of PROVIDERS) {
+    // Fail-safe: if we've already spent 15s trying, don't start a new request
+    if (Date.now() - startTime > 15000) {
+        console.warn('🕒 [AI Engine] Global timeout reached. Stopping provider attempts.');
+        break;
+    }
      if (!process.env[provider.envKey]) continue;
 
      for (let attempt = 1; attempt <= MAX_RETRIES_PER_KEY + 1; attempt++) {

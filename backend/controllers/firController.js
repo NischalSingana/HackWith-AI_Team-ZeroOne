@@ -194,6 +194,8 @@ async function analyzeFIRText(text) {
     return null;
 }
 
+// Fallback creation removed to ensure data integrity. All data must come from real FIR uploads via AI service.
+
 // ========================================================================
 // POST /api/upload — Process FIR and save to database
 // ========================================================================
@@ -215,13 +217,20 @@ exports.uploadFIR = async (req, res) => {
         const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000/process_fir';
         console.log(`\n📤 Sending ${fileName} to AI service...`);
 
-        const aiResponse = await axios.post(aiServiceUrl, form, {
-            headers: { ...form.getHeaders() },
-            timeout: 120000,
-        });
-
-        let data = aiResponse.data;
-        console.log(`✅ AI extracted (Basic): FIR#${data.fir_number}, Severity: ${data.severity}`);
+        let data;
+        try {
+            const aiResponse = await axios.post(aiServiceUrl, form, {
+                headers: { ...form.getHeaders() },
+                timeout: 120000,
+            });
+            data = aiResponse.data;
+            console.log(`✅ AI extracted (Basic): FIR#${data.fir_number}, Severity: ${data.severity}`);
+        } catch (aiErr) {
+            console.error(`❌ AI service unavailable or failed to process document: ${aiErr.message}`);
+            return res.status(503).json({ 
+                error: 'Document analysis failed. Please ensure the AI extraction service is running and the document is a valid FIR PDF.' 
+            });
+        }
 
         if (data.fir_number === 'INVALID_FILE') {
              return res.status(400).json({ error: 'Invalid file uploaded (appears to be an HTML error page, not a PDF).' });
@@ -404,6 +413,27 @@ exports.uploadFIR = async (req, res) => {
                 await client.query('COMMIT');
                 dbSaved = true;
                 console.log(`💾 Saved to database: accident_id=${accidentId}`);
+
+                // --- Ingest to Neo4j Graph DB ---
+                try {
+                     const graphIngestUrl = aiServiceUrl.replace('/process_fir', '/graph/ingest');
+                     const graphPayload = {
+                         id: accidentId,
+                         fir_number: data.fir_number,
+                         incident_date: data.date_time,
+                         cause: data.cause,
+                         severity: data.severity,
+                         confidence_score: data.confidence_score,
+                         raw_text: data.raw_text,
+                         location: data.location,
+                         victims: data.victims,
+                         vehicles: data.vehicles
+                     };
+                     await axios.post(graphIngestUrl, graphPayload, { timeout: 10000 });
+                     console.log(`🕸️ Ingested into Graph DB: ${data.fir_number}`);
+                } catch (graphErr) {
+                     console.error(`⚠️ Graph ingestion failed (non-fatal): ${graphErr.message}`);
+                }
 
             } catch (dbErr) {
                 await client.query('ROLLBACK');
@@ -1038,13 +1068,19 @@ exports.bulkProcessFromR2 = async (req, res) => {
                 form.append('file', fs.createReadStream(download.localPath));
 
                 console.log(`${progress} 🤖 Sending to AI service...`);
-                const aiResponse = await axios.post(aiServiceUrl, form, {
-                    headers: { ...form.getHeaders() },
-                    timeout: 120000,
-                });
-
-                let data = aiResponse.data;
-                console.log(`${progress} ✅ AI extracted: FIR#${data.fir_number}, Severity: ${data.severity}`);
+                try {
+                    const aiResponse = await axios.post(aiServiceUrl, form, {
+                        headers: { ...form.getHeaders() },
+                        timeout: 120000,
+                    });
+                    data = aiResponse.data;
+                    console.log(`${progress} ✅ AI extracted: FIR#${data.fir_number}, Severity: ${data.severity}`);
+                } catch (aiErr) {
+                    console.error(`${progress} ❌ AI extraction failed for ${file.key}: ${aiErr.message}`);
+                    results.failed++;
+                    results.errors.push({ file: file.key, error: `AI extraction failed: ${aiErr.message}` });
+                    continue; // Skip this file
+                }
 
                 // DEBUG LOGGING
                 console.log(`${progress} 🔍 Raw Text Length: ${data.raw_text ? data.raw_text.length : 'UNDEFINED'}`);
