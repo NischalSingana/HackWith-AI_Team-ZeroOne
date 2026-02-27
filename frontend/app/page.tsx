@@ -210,7 +210,7 @@ export default function Home() {
                             <div className="relative grid grid-cols-2 gap-4">
                                 <TechPill name="Neo4j" icon={Network} />
                                 <TechPill name="Groq AI" icon={Brain} />
-                                <TechPill name="OpenCV" icon={Activity} />
+                                <TechPill name="Google Vision API" icon={Activity} />
                                 <TechPill name="NetworkX" icon={GitMerge} />
                             </div>
                         </div>

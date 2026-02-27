@@ -39,12 +39,9 @@ export default function ClientLayoutHandler({
           <footer className="mt-12 py-6 text-center text-slate-500 text-sm border-t border-slate-800">
             <p>
               Developed by{' '}
-              <a 
-                href="#" 
-                className="text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
+              <span className="text-indigo-400 font-medium">
                 Team ZeroOne
-              </a>
+              </span>
             </p>
           </footer>
         </div>
