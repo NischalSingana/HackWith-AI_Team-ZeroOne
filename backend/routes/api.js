@@ -107,42 +107,13 @@ router.post('/graph/ingest', (req, res) => proxyToAI(req, res, '/graph/ingest', 
 // Ingest a batch of FIRs
 router.post('/graph/ingest-batch', (req, res) => proxyToAI(req, res, '/graph/ingest-batch', 'POST', req.body));
 
-// Graph visualization data (nodes + edges for canvas renderer)
-router.get('/graph/analysis/graph-data', async (req, res) => {
-    try {
-        // Pull centrality data to get node list, then build a trimmed graph payload
-        const [summaryRes, centralityRes, connectionsRes] = await Promise.all([
-            axios.get(`${AI_SERVICE_URL}/analysis/summary`, { params: req.query }),
-            axios.get(`${AI_SERVICE_URL}/analysis/centrality`, { params: { top_n: 100 } }),
-            axios.get(`${AI_SERVICE_URL}/analysis/connections`, { params: { limit: 300 } }),
-        ]);
-        const allNodes = [
-            ...(centralityRes.data.pagerank || []),
-            ...(centralityRes.data.degree_centrality || []),
-        ];
-        // Deduplicate
-        const seen = new Set();
-        const nodes = allNodes
-            .filter(n => { if (seen.has(n.node)) return false; seen.add(n.node); return true; })
-            .map(n => ({ id: n.node, node_type: n.node_type, severity: n.severity, cause: n.cause, area: n.area }));
-        
-        const edges = (connectionsRes.data.connections || []).map(edge => ({
-            source: edge.source,
-            target: edge.target,
-            rel_type: edge.rel_type
-        }));
-
-        res.json({ nodes, edges, summary: summaryRes.data });
-    } catch (err) {
-        const status = err.response?.status || 503;
-        res.status(status).json({ error: err.message });
-    }
-});
-
+// Graph analysis routes (Cached)
 const graphController = require('../controllers/graphController');
-
-// Analysis endpoints (Cached)
 router.get('/graph/analysis/:type', graphController.getCachedAnalysis);
+
+// Graph health & stats
+router.get('/graph/health', (req, res) => proxyToAI(req, res, '/graph/health'));
+router.get('/graph/stats', (req, res) => proxyToAI(req, res, '/graph/stats'));
 
 // ML prediction endpoints
 router.post('/graph/ml/train', (req, res) => proxyToAI(req, res, '/ml/train', 'POST'));
