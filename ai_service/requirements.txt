@@ -9,3 +9,5 @@ deep-translator
 langdetect
 python-dotenv
 neo4j
+networkx
+scipy
