@@ -12,36 +12,34 @@ import {
   X,
   TrendingUp,
   Home,
-  MapPin,
-  LogOut,
-  Share2
+  Share2,
+  Activity,
+  Zap,
+  Lock
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import Cookies from "js-cookie";
+import { useState } from "react";
 
 const NAV_ITEMS = [
-  { label: "Home", href: "/", icon: Home },
-  { label: "Dashboard", href: "/dashboard", icon: BarChart2 },
-  { label: "Strategic Insights", href: "/insights", icon: ShieldAlert },
-  { label: "Trends", href: "/trends", icon: TrendingUp },
-  { label: "Jurisdiction Wise", href: "/jurisdictions", icon: Map },
-  { label: "Area Analysis", href: "/area-analysis", icon: MapPin },
-  { label: "Accidents", href: "/accidents", icon: FileText },
-  { label: "Hotspots Map", href: "/hotspots", icon: Map },
-  { label: "Graph Explorer", href: "/graph-explorer", icon: Share2 },
-  { label: "Upload FIR", href: "/upload", icon: UploadCloud },
+  { group: "Operations", items: [
+    { label: "Home", href: "/", icon: Home },
+    { label: "Neural Upload", href: "/upload", icon: UploadCloud },
+    { label: "Evidence Locker", href: "/accidents", icon: FileText },
+  ]},
+  { group: "Intelligence", items: [
+    { label: "Command Dashboard", href: "/dashboard", icon: BarChart2 },
+    { label: "Tactical Hotspots", href: "/hotspots", icon: Map },
+    { label: "Graph Topology", href: "/graph-explorer", icon: Share2 },
+  ]},
+  { group: "Analysis", items: [
+    { label: "Trend Dynamics", href: "/trends", icon: TrendingUp },
+    { label: "Strategic Reports", href: "/insights", icon: ShieldAlert },
+    { label: "Jurisdiction Map", href: "/jurisdictions", icon: Map },
+  ]}
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
-
-  useEffect(() => {
-    Promise.resolve().then(() => {
-      setUsername(localStorage.getItem('username'));
-    });
-  }, []);
 
   return (
     <>
@@ -55,76 +53,97 @@ export default function Sidebar() {
 
       {/* Sidebar Container */}
       <aside 
-        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-slate-950 border-r border-slate-800 transition-transform transform ${
+        className={`fixed top-0 left-0 z-40 h-screen w-72 bg-slate-950/80 backdrop-blur-2xl border-r border-slate-800/50 transition-all duration-500 transform ${
           isOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0`}
+        } lg:translate-x-0 shadow-[0_0_50px_rgba(0,0,0,0.5)]`}
       >
-        <div className="flex flex-col h-full px-4 py-8">
-          {/* Logo */}
-          <div className="mb-10 px-2 flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <ShieldAlert className="text-white" size={24} />
+        <div className="flex flex-col h-full px-5 py-8">
+          {/* Logo (Refined) */}
+          <div className="mb-10 px-2 flex items-center gap-4">
+            <div className="relative group">
+                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl blur opacity-25 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+                <div className="relative w-12 h-12 bg-slate-900 border border-slate-700 rounded-xl flex items-center justify-center shadow-xl">
+                    <ShieldAlert className="text-indigo-400 group-hover:text-white transition-colors" size={26} />
+                </div>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">CrimeGraph AI</h1>
-              <span className="text-xs text-slate-500 font-medium">Intelligent Mapping System</span>
+              <h1 className="text-xl font-black text-white tracking-tight uppercase leading-none">CrimeGraph</h1>
+              <span className="text-[10px] text-indigo-400 font-bold tracking-[0.2em] uppercase">Intelligence Portal</span>
             </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-2">
-            {NAV_ITEMS.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              
-              return (
-                <Link 
-                  key={item.href} 
-                  href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                    isActive 
-                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25" 
-                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                  }`}
-                  onClick={() => setIsOpen(false)} // Close on mobile click
-                >
-                  <Icon 
-                    size={20} 
-                    className={`transition-colors ${isActive ? "text-white" : "text-slate-500 group-hover:text-indigo-400"}`} 
-                  />
-                  <span className="font-medium text-sm">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Footer / User Info + Logout */}
-          <div className="mt-auto space-y-3">
-            {username && (
-              <div className="px-4 py-3 bg-slate-900/50 rounded-xl border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-sm font-bold text-white uppercase flex-shrink-0">
-                    {username.charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{username}</p>
-                    <p className="text-[10px] text-slate-500">Authenticated</p>
-                  </div>
-                </div>
+          {/* Navigation (Grouped) */}
+          <div className="flex-1 space-y-8 overflow-y-auto custom-scrollbar pr-1">
+            {NAV_ITEMS.map((group) => (
+              <div key={group.group}>
+                <h3 className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mb-4">
+                    {group.group}
+                </h3>
+                <nav className="space-y-1">
+                    {group.items.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+                    
+                    return (
+                        <Link 
+                            key={item.href} 
+                            href={item.href}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group relative ${
+                                isActive 
+                                ? "bg-indigo-600/10 text-white shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]" 
+                                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                            }`}
+                            onClick={() => setIsOpen(false)}
+                        >
+                            {isActive && (
+                                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-indigo-500 rounded-r-full shadow-[0_0_15px_rgba(99,102,241,1)]" />
+                            )}
+                            <Icon 
+                                size={20} 
+                                className={`transition-all duration-300 ${
+                                    isActive 
+                                    ? "text-indigo-400 scale-110 drop-shadow-[0_0_8px_rgba(129,140,248,0.8)]" 
+                                    : "text-slate-500 group-hover:text-indigo-400"
+                                }`} 
+                            />
+                            <span className={`text-sm tracking-tight ${isActive ? "font-bold text-indigo-100" : "font-medium"}`}>
+                                {item.label}
+                            </span>
+                            {isActive && (
+                                <Zap size={12} className="ml-auto text-indigo-500 animate-pulse" />
+                            )}
+                        </Link>
+                    );
+                    })}
+                </nav>
               </div>
-            )}
-            <button
-              onClick={() => {
-                Cookies.remove('auth_token');
-                localStorage.removeItem('auth_token');
-                localStorage.removeItem('username');
-                window.location.href = '/';
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-900/30 hover:text-red-300 transition-all duration-200 group"
-            >
-              <LogOut size={20} className="text-slate-500 group-hover:text-red-400 transition-colors" />
-              <span className="font-medium text-sm">Logout</span>
-            </button>
+            ))}
+          </div>
+
+          {/* System Bio-Metrics / Status (New Visual Element) */}
+          <div className="mt-auto pt-6 border-t border-slate-800/50">
+            <div className="bg-slate-900/40 rounded-2xl p-4 border border-slate-800/50">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">System Link: Online</span>
+                    </div>
+                    <Lock size={12} className="text-slate-600" />
+                </div>
+                <div className="space-y-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                        <span className="text-slate-500">Processing Load</span>
+                        <span className="text-indigo-400 font-mono">14.2%</span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                        <div className="bg-indigo-500 h-full w-[14%]" />
+                    </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500 font-medium">
+                    <Activity size={10} className="text-indigo-500" />
+                    <span>Neural Network v2.4a Sync</span>
+                </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -132,7 +151,7 @@ export default function Sidebar() {
       {/* Overlay for mobile */}
       {isOpen && (
         <div 
-          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}

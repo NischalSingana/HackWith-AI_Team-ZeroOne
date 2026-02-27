@@ -49,7 +49,7 @@ const mapStyles = [
 ];
 
 const mapContainerStyle = {
-  height: "500px",
+  height: "600px",
   width: "100%",
 };
 
@@ -118,21 +118,24 @@ export default function AccidentMap() {
 
   if (!isLoaded) {
     return (
-      <div className="h-[500px] w-100 flex items-center justify-center bg-slate-900 rounded-xl border border-slate-700">
-        <div className="animate-spin w-5 h-5 border-2 border-slate-500 border-t-blue-500 rounded-full" />
+      <div className="h-[600px] w-100 flex items-center justify-center bg-slate-950 rounded-xl border border-slate-800 shadow-2xl">
+        <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin w-8 h-8 border-4 border-slate-800 border-t-indigo-500 rounded-full" />
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Warping Matrix...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold text-slate-200">Accident Hotspots — NTR District</h2>
+          <h2 className="text-xl font-black text-white tracking-tight">Accident Hotspots <span className="text-slate-500 ml-1">— NTR District</span></h2>
           {mapData && (
-            <span className="px-3 py-1 text-sm bg-slate-700 rounded-full text-slate-300">
-              {mapData.count} locations
+            <span className="px-3 py-1 text-[10px] font-black bg-slate-800/80 border border-slate-700/50 rounded-full text-indigo-400 uppercase tracking-widest shadow-lg">
+              {mapData.count} locations identified
             </span>
           )}
         </div>
@@ -187,7 +190,7 @@ export default function AccidentMap() {
             />
           )}
 
-          {!showHeatmap && mapData?.data.map((marker: AccidentMarker) => (
+          {!showHeatmap && (mapData?.data || []).map((marker: AccidentMarker) => (
             <MarkerF
               key={marker.id}
               position={{ lat: marker.lat, lng: marker.lng }}
@@ -228,12 +231,12 @@ export default function AccidentMap() {
       </div>
 
       {/* Stats Cards */}
-      {mapData && mapData.data.length > 0 && (
+      {mapData && mapData.data && mapData.data.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Mapped" value={mapData.count} color="#3b82f6" />
+          <StatCard label="Total Mapped" value={mapData.count || 0} color="#3b82f6" />
           <StatCard label="Fatalities" value={mapData.data.filter((d: AccidentMarker) => d.severity === 'Fatal').length} color="#ef4444" />
           <StatCard label="Grievous" value={mapData.data.filter((d: AccidentMarker) => d.severity === 'Grievous').length} color="#f59e0b" />
-          <StatCard label="Confidence Index" value={Math.round((mapData.data.reduce((acc: number, curr: AccidentMarker) => acc + curr.confidence_score, 0) / mapData.count) * 100)} unit="%" color="#10b981" />
+          <StatCard label="Confidence Index" value={Math.round((mapData.data.reduce((acc: number, curr: AccidentMarker) => acc + curr.confidence_score, 0) / (mapData.count || 1)) * 100) || 0} unit="%" color="#10b981" />
         </div>
       )}
     </div>
