@@ -1,0 +1,100 @@
+version: "3.8"
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: crimegraph-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474" # Neo4j Browser UI
+      - "7687:7687" # Bolt protocol
+    environment:
+      - NEO4J_AUTH=neo4j/crimegraph_password
+      - NEO4J_PLUGINS=["graph-data-science"]
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_dbms_memory_pagecache_size=512M
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "neo4j status || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - crimegraph-net
+
+  backend:
+    build: ./backend
+    container_name: fir-analysis-backend
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - AI_SERVICE_URL=http://ai-service:8000/process_fir
+      - DATABASE_URL=${DATABASE_URL}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - GROQ_KEY_1=${GROQ_KEY_1}
+      - GROQ_KEY_2=${GROQ_KEY_2}
+      - GROQ_KEY_3=${GROQ_KEY_3}
+      - GROQ_KEY_4=${GROQ_KEY_4}
+      - GROQ_KEY_5=${GROQ_KEY_5}
+      - GROQ_KEY_6=${GROQ_KEY_6}
+      - GROQ_KEY_7=${GROQ_KEY_7}
+      - GROQ_KEY_8=${GROQ_KEY_8}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_KEY_1=${OPENROUTER_KEY_1}
+      - OPENROUTER_KEY_2=${OPENROUTER_KEY_2}
+      - OPENROUTER_KEY_3=${OPENROUTER_KEY_3}
+      - OPENROUTER_KEY_4=${OPENROUTER_KEY_4}
+    depends_on:
+      - ai-service
+    networks:
+      - crimegraph-net
+
+  ai-service:
+    build: ./ai_service
+    container_name: fir-analysis-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./ai_service/.env
+    environment:
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=crimegraph_password
+      - NEO4J_DATABASE=neo4j
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - crimegraph-net
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=https://api.nischalsingana.com/api
+    container_name: fir-analysis-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - crimegraph-net
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+
+networks:
+  crimegraph-net:
+    driver: bridge
