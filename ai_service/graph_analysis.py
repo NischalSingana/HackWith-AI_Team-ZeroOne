@@ -18,6 +18,209 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
+# Mock Graph Generator — Prototype Fallback
+# ============================================================
+
+def generate_mock_graph() -> nx.MultiDiGraph:
+    """
+    Build a graph from the PostgreSQL database when Neo4j is unavailable.
+    Pulls real FIR data that was uploaded and analyzed, creating a full
+    graph with FIR, Location, Person, Vehicle, and CrimeType nodes.
+    Falls back to a small synthetic graph only if PostgreSQL also fails.
+    """
+    import os
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    
+    if DATABASE_URL:
+        try:
+            import psycopg2
+            import psycopg2.extras
+            
+            logger.info("Neo4j unavailable — building graph from PostgreSQL data...")
+            conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            G = nx.MultiDiGraph()
+            
+            # 1. Load all accidents as FIR nodes
+            cur.execute("""
+                SELECT id, fir_number, incident_date, cause, severity, confidence_score, status
+                FROM accidents ORDER BY id
+            """)
+            accidents = cur.fetchall()
+            
+            if accidents:
+                for acc in accidents:
+                    fir_id = acc['fir_number'] or f"FIR_{acc['id']}"
+                    G.add_node(fir_id, 
+                        node_type="FIR", 
+                        severity=acc.get('severity') or 'Unknown',
+                        cause=acc.get('cause'),
+                        confidence=float(acc.get('confidence_score') or 0),
+                        incident_date=str(acc.get('incident_date') or ''),
+                        postgres_id=acc['id']
+                    )
+                
+                # 2. Load locations
+                cur.execute("""
+                    SELECT l.id, l.accident_id, l.address, l.area, l.city, l.latitude, l.longitude,
+                           a.fir_number
+                    FROM locations l
+                    JOIN accidents a ON a.id = l.accident_id
+                """)
+                locations = cur.fetchall()
+                
+                seen_locations = {}
+                for loc in locations:
+                    area = loc.get('area') or loc.get('address') or 'Unknown Area'
+                    loc_key = area.strip().upper()
+                    if loc_key not in seen_locations:
+                        loc_id = f"LOC_{loc['id']}"
+                        seen_locations[loc_key] = loc_id
+                        G.add_node(loc_id,
+                            node_type="Location",
+                            area=area,
+                            city=loc.get('city') or 'Vijayawada',
+                            lat=float(loc['latitude']) if loc.get('latitude') else None,
+                            lng=float(loc['longitude']) if loc.get('longitude') else None,
+                        )
+                    else:
+                        loc_id = seen_locations[loc_key]
+                    
+                    fir_id = loc.get('fir_number') or f"FIR_{loc['accident_id']}"
+                    if fir_id in G and loc_id in G:
+                        G.add_edge(fir_id, loc_id, rel_type="OCCURRED_AT", weight=1.0)
+                
+                # 3. Load victims as Person nodes
+                cur.execute("""
+                    SELECT v.id, v.accident_id, v.victim_name, v.age, v.gender, v.injury_severity,
+                           a.fir_number
+                    FROM victims v
+                    JOIN accidents a ON a.id = v.accident_id
+                """)
+                victims = cur.fetchall()
+                
+                for vic in victims:
+                    person_id = f"P_{vic['id']}"
+                    name = vic.get('victim_name') or f"Person {vic['id']}"
+                    G.add_node(person_id,
+                        node_type="Person",
+                        name=name,
+                        age=vic.get('age'),
+                        gender=vic.get('gender'),
+                        role="Victim",
+                    )
+                    fir_id = vic.get('fir_number') or f"FIR_{vic['accident_id']}"
+                    if fir_id in G:
+                        G.add_edge(fir_id, person_id, rel_type="INVOLVES_PERSON", role="Victim", weight=1.0)
+                
+                # 4. Load vehicles
+                cur.execute("""
+                    SELECT veh.id, veh.accident_id, veh.vehicle_type, veh.vehicle_number, veh.driver_name,
+                           a.fir_number
+                    FROM vehicles veh
+                    JOIN accidents a ON a.id = veh.accident_id
+                """)
+                vehicles = cur.fetchall()
+                
+                for veh in vehicles:
+                    veh_id = f"V_{veh['id']}"
+                    G.add_node(veh_id,
+                        node_type="Vehicle",
+                        vehicle_type=veh.get('vehicle_type'),
+                        vehicle_number=veh.get('vehicle_number'),
+                    )
+                    fir_id = veh.get('fir_number') or f"FIR_{veh['accident_id']}"
+                    if fir_id in G:
+                        G.add_edge(fir_id, veh_id, rel_type="INVOLVES_VEHICLE", weight=1.0)
+                    
+                    if veh.get('driver_name') and veh['driver_name'] != 'Unknown':
+                        driver_id = f"P_DRV_{veh['id']}"
+                        G.add_node(driver_id,
+                            node_type="Person",
+                            name=veh['driver_name'],
+                            role="Driver",
+                        )
+                        if fir_id in G:
+                            G.add_edge(fir_id, driver_id, rel_type="INVOLVES_PERSON", role="Driver", weight=1.0)
+                
+                # 5. Create CrimeType nodes from causes
+                cause_map = {}
+                for acc in accidents:
+                    cause = acc.get('cause')
+                    if cause and cause != 'Under Investigation':
+                        cause_key = cause.strip().upper()[:60]
+                        if cause_key not in cause_map:
+                            crime_id = cause_key.replace(' ', '_')
+                            cause_map[cause_key] = crime_id
+                            G.add_node(crime_id, node_type="CrimeType")
+                        
+                        fir_id = acc['fir_number'] or f"FIR_{acc['id']}"
+                        if fir_id in G and cause_map[cause_key] in G:
+                            G.add_edge(fir_id, cause_map[cause_key], rel_type="CLASSIFIED_AS", weight=1.0)
+                
+                cur.close()
+                conn.close()
+                
+                logger.info(
+                    f"Built graph from PostgreSQL: {G.number_of_nodes()} nodes, "
+                    f"{G.number_of_edges()} edges "
+                    f"({len(accidents)} FIRs, {len(locations)} locations, "
+                    f"{len(victims)} victims, {len(vehicles)} vehicles)"
+                )
+                return G
+                
+        except ImportError:
+            logger.warning("psycopg2 not installed — falling back to synthetic mock data")
+        except Exception as e:
+            logger.warning(f"PostgreSQL fallback failed: {e} — using synthetic mock data")
+    
+    # Static fallback (last resort)
+    logger.info("Using static synthetic mock graph")
+    G = nx.MultiDiGraph()
+    
+    firs = [
+        {"id": "FIR/2024/001", "sev": "Fatal", "cause": "Overspeeding", "date": "2024-05-12 14:30"},
+        {"id": "FIR/2024/002", "sev": "Grievous", "cause": "Drunken Driving", "date": "2024-05-13 22:15"},
+        {"id": "FIR/2024/003", "sev": "Non-Fatal", "cause": "Brake Failure", "date": "2024-05-14 09:45"},
+        {"id": "FIR/2024/004", "sev": "Fatal", "cause": "Wrong Side", "date": "2024-05-15 18:20"},
+        {"id": "FIR/2024/005", "sev": "Grievous", "cause": "Overspeeding", "date": "2024-05-16 11:10"},
+    ]
+    for fir in firs:
+        G.add_node(fir["id"], node_type="FIR", severity=fir["sev"], cause=fir["cause"], incident_date=fir["date"])
+    locations = [
+        {"id": "LOC_BENZ_CIRCLE", "area": "Benz Circle", "lat": 16.502, "lng": 80.647},
+        {"id": "LOC_PNBS", "area": "PNBS", "lat": 16.518, "lng": 80.620},
+        {"id": "LOC_RAMAVARAPPADU", "area": "Ramavarappadu", "lat": 16.512, "lng": 80.672},
+    ]
+    for loc in locations:
+        G.add_node(loc["id"], node_type="Location", area=loc["area"], lat=loc["lat"], lng=loc["lng"])
+    persons = [
+        {"id": "P_001", "name": "Ravi Kumar", "role": "Driver"},
+        {"id": "P_002", "name": "Suresh Raina", "role": "Victim"},
+        {"id": "P_003", "name": "Venkatesh Babu", "role": "Witness"},
+    ]
+    for p in persons:
+        G.add_node(p["id"], node_type="Person", name=p["name"], role=p["role"])
+    crime_types = ["OVERSPEEDING", "DRUNKEN_DRIVING", "MECHANICAL_FAILURE", "TRAFFIC_VIOLATION"]
+    for ct in crime_types:
+        G.add_node(ct, node_type="CrimeType")
+    G.add_edge("FIR/2024/001", "LOC_BENZ_CIRCLE", rel_type="OCCURRED_AT")
+    G.add_edge("FIR/2024/002", "LOC_PNBS", rel_type="OCCURRED_AT")
+    G.add_edge("FIR/2024/003", "LOC_RAMAVARAPPADU", rel_type="OCCURRED_AT")
+    G.add_edge("FIR/2024/004", "LOC_BENZ_CIRCLE", rel_type="OCCURRED_AT")
+    G.add_edge("FIR/2024/005", "LOC_PNBS", rel_type="OCCURRED_AT")
+    G.add_edge("FIR/2024/001", "P_001", rel_type="INVOLVES_PERSON", role="Driver")
+    G.add_edge("FIR/2024/001", "P_002", rel_type="INVOLVES_PERSON", role="Victim")
+    G.add_edge("FIR/2024/002", "P_003", rel_type="INVOLVES_PERSON", role="Witness")
+    G.add_edge("FIR/2024/001", "OVERSPEEDING", rel_type="CLASSIFIED_AS")
+    G.add_edge("FIR/2024/002", "DRUNKEN_DRIVING", rel_type="CLASSIFIED_AS")
+    G.add_edge("FIR/2024/003", "MECHANICAL_FAILURE", rel_type="CLASSIFIED_AS")
+    G.add_edge("FIR/2024/004", "TRAFFIC_VIOLATION", rel_type="CLASSIFIED_AS")
+    G.add_edge("FIR/2024/005", "OVERSPEEDING", rel_type="CLASSIFIED_AS")
+    return G
+
+# ============================================================
 # Graph Builder — Load from Neo4j into NetworkX
 # ============================================================
 
@@ -42,8 +245,8 @@ def build_networkx_graph(
     """
     neo4j = get_neo4j()
     if not neo4j.is_connected:
-        logger.warning("⚠️ Neo4j not connected — returning empty graph")
-        return nx.MultiDiGraph()
+        logger.warning("⚠️ Neo4j not connected — generating intelligent prototype mock graph")
+        return generate_mock_graph()
 
     G = nx.MultiDiGraph()
 
@@ -246,7 +449,12 @@ def detect_communities(G: nx.MultiDiGraph) -> Dict[str, Any]:
     e.g., same area, same vehicle types, same crime patterns.
     """
     if G.number_of_nodes() < 2:
-        return {"error": "Not enough nodes for community detection", "communities": []}
+        return {
+            "num_communities": 0,
+            "modularity_score": 0.0,
+            "communities": [],
+            "error": "Not enough nodes for community detection"
+        }
 
     UG = G.to_undirected()
     # Remove self-loops for community detection
@@ -261,7 +469,12 @@ def detect_communities(G: nx.MultiDiGraph) -> Dict[str, Any]:
         )
     except Exception as e:
         logger.error(f"Community detection error: {e}")
-        return {"error": str(e), "communities": []}
+        return {
+            "num_communities": 0,
+            "modularity_score": 0.0,
+            "communities": [],
+            "error": str(e)
+        }
 
     community_details = []
     for i, community in enumerate(communities):

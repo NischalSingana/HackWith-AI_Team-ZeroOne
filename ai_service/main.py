@@ -132,7 +132,7 @@ async def startup_event():
     if neo4j_ok:
         print("✅ Neo4j graph database connected")
     else:
-        print("⚠️ Neo4j unavailable — graph features disabled (app will still work)")
+        print("💡 Neo4j unavailable — Neural Prototype Fallback Active (Demo Mode)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -617,14 +617,31 @@ async def analysis_hotspots_api(top_n: int = 10):
 
 
 @app.get("/analysis/connections")
-async def analysis_connections(node_a: str, node_b: str):
+async def analysis_connections(node_a: Optional[str] = None, node_b: Optional[str] = None, limit: int = 500):
     """
-    Find shortest path and alternative paths between any two nodes.
+    Find shortest path between two nodes, or return list of all links if nodes not specified.
     """
     if not HAS_NETWORKX:
         raise HTTPException(status_code=503, detail="NetworkX not available")
+    
     G = build_networkx_graph()
-    return find_connections(node_a, node_b, G)
+    
+    # CASE 1: Pathfinding between two specific nodes
+    if node_a and node_b:
+        return find_connections(node_a, node_b, G)
+    
+    # CASE 2: Get all links (for visualizer proxy)
+    edges = []
+    for u, v, data in G.edges(data=True):
+        edges.append({
+            "source": u,
+            "target": v,
+            "rel_type": data.get("rel_type")
+        })
+        if len(edges) >= limit:
+            break
+            
+    return {"connections": edges}
 
 
 # ========== ML Prediction API Endpoints ==========

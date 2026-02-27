@@ -235,7 +235,8 @@ def init_neo4j() -> bool:
     if success:
         logger.info("✅ Neo4j initialized successfully")
     else:
-        logger.warning("⚠️ Neo4j initialization failed — graph features will be disabled")
+        logger.warning("⚠️ Neo4j unavailable — falling back to 'Neural Prototype Mode' (NetworkX Synthetic Data).")
+        logger.info("💡 TIP: Run 'docker-compose up -d neo4j' to activate the full Neo4j Graph Database.")
     return success
 
 

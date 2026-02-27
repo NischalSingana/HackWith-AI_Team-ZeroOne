@@ -114,6 +114,20 @@ async function resetDatabase() {
             );
 
             -- ============================================================
+            -- AI_ANALYSIS_CACHE: Persistent cache for high-latency AI reports
+            -- ============================================================
+            CREATE TABLE IF NOT EXISTS ai_analysis_cache (
+                id              SERIAL PRIMARY KEY,
+                analysis_type   VARCHAR(50) NOT NULL, -- 'global_insights', 'trends', 'jurisdiction'
+                identifier      VARCHAR(200) NOT NULL, -- 'all', DCP name, Station name
+                last_accident_id INTEGER NOT NULL,    -- To detect if new data arrived
+                data            JSONB NOT NULL,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(analysis_type, identifier)
+            );
+
+            -- ============================================================
             -- INDEXES: For fast queries on common access patterns
             -- ============================================================
             CREATE INDEX idx_accidents_fir        ON accidents(fir_number);
@@ -129,6 +143,7 @@ async function resetDatabase() {
             CREATE INDEX idx_vehicles_type        ON vehicles(vehicle_type);
             CREATE INDEX idx_vehicles_number      ON vehicles(vehicle_number);
             CREATE INDEX idx_insights_created     ON ai_insights(created_at DESC);
+            CREATE INDEX idx_cache_lookup         ON ai_analysis_cache(analysis_type, identifier);
         `);
 
         console.log('✅ All tables created!\n');

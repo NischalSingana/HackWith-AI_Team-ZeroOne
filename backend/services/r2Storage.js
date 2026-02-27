@@ -12,9 +12,19 @@ const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListO
 const fs = require('fs');
 const path = require('path');
 
+function firstEnv(keys) {
+  for (const key of keys) {
+    if (process.env[key]) return process.env[key];
+  }
+  return undefined;
+}
+
 // Initialize R2 client (S3-compatible)
 function getR2Client() {
-  const accountId = process.env.R2_ACCOUNT_ID;
+  const accountId = firstEnv(['R2_ACCOUNT_ID', 'CLOUDFLARE_ACCOUNT_ID']);
+  const accessKeyId = firstEnv(['R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY', 'CLOUDFLARE_R2_ACCESS_KEY_ID']);
+  const secretAccessKey = firstEnv(['R2_SECRET_ACCESS_KEY', 'R2_SECRET_KEY', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY']);
+
   if (!accountId) {
     console.warn('⚠️  R2_ACCOUNT_ID not set — PDF uploads will only be stored locally');
     return null;
@@ -24,13 +34,13 @@ function getR2Client() {
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      accessKeyId,
+      secretAccessKey,
     },
   });
 }
 
-const BUCKET = process.env.R2_BUCKET_NAME || 'fir-analysis-pdfs';
+const BUCKET = firstEnv(['R2_BUCKET_NAME', 'R2_BUCKET', 'CLOUDFLARE_R2_BUCKET']) || 'fir-analysis-pdfs';
 
 /**
  * Upload a file to R2
@@ -40,6 +50,7 @@ const BUCKET = process.env.R2_BUCKET_NAME || 'fir-analysis-pdfs';
  */
 async function uploadToR2(localFilePath, originalName) {
   const client = getR2Client();
+  const accountId = firstEnv(['R2_ACCOUNT_ID', 'CLOUDFLARE_ACCOUNT_ID']);
   if (!client) {
     return { success: false, key: null, url: localFilePath, error: 'R2 not configured' };
   }
@@ -64,9 +75,10 @@ async function uploadToR2(localFilePath, originalName) {
     await client.send(command);
 
     // Build the public URL
-    const publicUrl = process.env.R2_PUBLIC_URL
-      ? `${process.env.R2_PUBLIC_URL}/${key}`
-      : `https://${BUCKET}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${key}`;
+    const publicBase = firstEnv(['R2_PUBLIC_URL', 'R2_PUBLIC_BASE_URL', 'CLOUDFLARE_R2_PUBLIC_URL']);
+    const publicUrl = publicBase
+      ? `${publicBase}/${key}`
+      : `https://${BUCKET}.${accountId}.r2.cloudflarestorage.com/${key}`;
 
     console.log(`☁️  Uploaded to R2: ${key}`);
 

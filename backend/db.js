@@ -3,7 +3,19 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL;
+function firstEnv(keys) {
+  for (const key of keys) {
+    if (process.env[key]) return process.env[key];
+  }
+  return undefined;
+}
+
+const connectionString = firstEnv([
+  'DATABASE_URL',
+  'POSTGRES_URL',
+  'POSTGRES_CONNECTION_STRING',
+  'NEON_DATABASE_URL',
+]);
 
 let pool = null;
 
