@@ -18,6 +18,23 @@ load_dotenv()
 from neo4j_connection import init_neo4j, close_neo4j, get_neo4j
 from graph_ingestion import ingest_fir_to_graph, ingest_batch, get_graph_stats, clear_graph
 
+# ========== NetworkX Graph Analysis Setup ==========
+try:
+    import networkx as nx
+    from graph_analysis import (
+        build_networkx_graph,
+        compute_centrality,
+        detect_communities,
+        find_connections,
+        analyze_hotspots,
+        graph_summary,
+    )
+    HAS_NETWORKX = True
+    print("✅ NetworkX graph analysis engine loaded")
+except ImportError as e:
+    HAS_NETWORKX = False
+    print(f"⚠️ NetworkX not available — analysis endpoints disabled: {e}")
+
 # ========== Google Vision API Setup ==========
 from google.cloud import vision
 from google.oauth2 import service_account
@@ -156,6 +173,7 @@ async def health():
         "spacy": "enabled" if nlp else "disabled",
         "translator": "enabled" if HAS_TRANSLATOR else "disabled",
         "neo4j": "enabled" if neo4j.is_connected else "disabled",
+        "networkx": "enabled" if HAS_NETWORKX else "disabled",
     }
 
 
@@ -613,7 +631,67 @@ async def graph_clear():
     return clear_graph()
 
 
+# ========== NetworkX Analysis API Endpoints ==========
+
+@app.get("/analysis/summary")
+async def analysis_summary():
+    """High-level structural summary of the crime graph."""
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return graph_summary(G)
+
+
+@app.get("/analysis/centrality")
+async def analysis_centrality(top_n: int = 10):
+    """
+    Compute centrality scores (degree, betweenness, PageRank) for all nodes.
+    Returns top-N most influential nodes by each metric.
+    """
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return compute_centrality(G, top_n=top_n)
+
+
+@app.get("/analysis/communities")
+async def analysis_communities():
+    """
+    Detect crime clusters using greedy modularity community detection.
+    Communities = groups of FIRs tightly linked by location, vehicle, or pattern.
+    """
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return detect_communities(G)
+
+
+@app.get("/analysis/hotspots")
+async def analysis_hotspots(top_n: int = 10):
+    """
+    Rank locations by FIR count and weighted danger score (based on severity).
+    """
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return analyze_hotspots(G, top_n=top_n)
+
+
+@app.get("/analysis/connections")
+async def analysis_connections(node_a: str, node_b: str):
+    """
+    Find shortest path and alternative paths between any two nodes.
+    E.g., connect two FIR numbers to find hidden links via shared
+    locations, persons, or vehicles.
+    """
+    if not HAS_NETWORKX:
+        raise HTTPException(status_code=503, detail="NetworkX not available")
+    G = build_networkx_graph()
+    return find_connections(node_a, node_b, G)
+
+
 # ========== Run Server ==========
+
 if __name__ == "__main__":
     import uvicorn
     print("\n🚀 Starting FIR Analysis AI Service...")
