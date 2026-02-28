@@ -20,6 +20,7 @@ const PORT = process.env.PORT || 5001;
 // Middleware
 const defaultOrigins = [
   "https://crimegraph.zeroonedevs.in",
+  "https://fir-analysis.nischalsingana.com",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ];
