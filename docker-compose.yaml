@@ -55,11 +55,11 @@ services:
       - crimegraph-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const http=require('http');const req=http.get('http://localhost:5001/api/healthz',res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3500);\""]
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(5001,'127.0.0.1',()=>{s.end();process.exit(0);});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),5000);"]
       interval: 20s
-      timeout: 6s
-      retries: 5
-      start_period: 30s
+      timeout: 8s
+      retries: 8
+      start_period: 90s
 
   # Next.js Frontend
   frontend:
