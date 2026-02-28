@@ -42,15 +42,25 @@ export default function AccidentsPage() {
     const [dateTo, setDateTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
 
+    const [error, setError] = useState<string | null>(null);
+
     useEffect(() => {
         fetch(`${API_BASE_URL}/accidents`)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                return res.json();
+            })
             .then(data => {
-                if (data.success) setAccidents(data.data);
+                if (data.success) {
+                    setAccidents(data.data);
+                } else {
+                    throw new Error('API returned failure');
+                }
                 setLoading(false);
             })
             .catch(err => {
-                console.error(err);
+                console.error('Failed to fetch accidents:', err);
+                setError(err.message || 'Network failure');
                 setLoading(false);
             });
     }, []);
@@ -263,6 +273,22 @@ export default function AccidentsPage() {
                                 </div>
                             </Link>
                         ))
+                    ) : error ? (
+                        <div className="flex flex-col items-center justify-center py-32 rounded-3xl border border-red-500/30 bg-red-500/5 text-center space-y-4">
+                            <div className="p-6 bg-red-500/20 rounded-full text-red-500">
+                                <AlertTriangle size={48} />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-red-500">API Connection Lost</h3>
+                                <p className="text-slate-400 text-sm max-w-sm mt-1">The secure registry is currently unreachable ({error}). Please ensure the backend service is deployed and running correctly.</p>
+                            </div>
+                            <button 
+                                onClick={() => window.location.reload()}
+                                className="px-6 py-2.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-xl text-sm font-bold transition-all border border-red-500/30"
+                            >
+                                Reconnect to Server
+                            </button>
+                        </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-32 rounded-3xl border-2 border-dashed border-slate-800 bg-slate-900/20 text-center space-y-4">
                             <div className="p-6 bg-slate-800/50 rounded-full text-slate-600">
