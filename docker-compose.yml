@@ -28,9 +28,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     expose:
-      - "5001"
+      - "3000"
     environment:
-      - PORT=5001
+      - PORT=3000
       - DATABASE_URL=${DATABASE_URL}
       - AI_SERVICE_URL=http://ai-service:8000/process_fir
       - CORS_ORIGINS=${CORS_ORIGINS:-https://crimegraph.zeroonedevs.in,http://localhost:3000,http://127.0.0.1:3000}
@@ -55,7 +55,7 @@ services:
       - crimegraph-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(5001,'127.0.0.1',()=>{s.end();process.exit(0);});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),5000);"]
+      test: ["CMD", "node", "-e", "const net=require('net');const s=net.connect(3000,'127.0.0.1',()=>{s.end();process.exit(0);});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),5000);"]
       interval: 20s
       timeout: 8s
       retries: 8

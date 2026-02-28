@@ -15,7 +15,7 @@ COPY . .
 RUN mkdir -p uploads
 
 # Expose backend port
-EXPOSE 5001
+EXPOSE 3000
 
 # Start the server
 CMD ["npm", "start"]
