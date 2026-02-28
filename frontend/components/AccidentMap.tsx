@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Popup, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import { API_BASE_URL } from "@/lib/api";
 
@@ -61,7 +61,6 @@ export default function AccidentMap() {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
 
   // Load data
   useEffect(() => {

@@ -3,6 +3,7 @@ import os
 import json
 import io
 import traceback
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
@@ -114,8 +115,23 @@ def is_form_boilerplate_dense(text: str) -> bool:
     # If we find many labels but the text is short, it's probably just a form header
     return len(found_labels) >= 3 and len(text.strip()) < 500
 
+# ========== Lifecycle Events ==========
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize & Cleanup Neo4j."""
+    neo4j_ok = init_neo4j()
+    if neo4j_ok:
+        print("✅ Neo4j graph database connected")
+    else:
+        print("💡 Neo4j unavailable — Neural Prototype Fallback Active (Demo Mode)")
+    
+    yield
+    
+    close_neo4j()
+    print("🔌 Neo4j connection closed")
+
 # ========== FastAPI App ==========
-app = FastAPI(title="FIR Analysis AI Service")
+app = FastAPI(title="FIR Analysis AI Service", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -123,22 +139,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ========== Lifecycle Events ==========
-@app.on_event("startup")
-async def startup_event():
-    """Initialize Neo4j on startup."""
-    neo4j_ok = init_neo4j()
-    if neo4j_ok:
-        print("✅ Neo4j graph database connected")
-    else:
-        print("💡 Neo4j unavailable — Neural Prototype Fallback Active (Demo Mode)")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup Neo4j on shutdown."""
-    close_neo4j()
-    print("🔌 Neo4j connection closed")
 
 
 # ========== Data Models ==========
