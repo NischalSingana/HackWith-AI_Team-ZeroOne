@@ -4,8 +4,8 @@ services:
     build:
       context: ./ai_service
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
@@ -27,8 +27,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "5001:5001"
+    expose:
+      - "5001"
     environment:
       - PORT=5001
       - DATABASE_URL=${DATABASE_URL}
@@ -69,8 +69,8 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://crimegraphapi.zeroonedevs.in/api}
         - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-    ports:
-      - "3002:3000"
+    expose:
+      - "3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=https://crimegraphapi.zeroonedevs.in/api
@@ -85,9 +85,10 @@ services:
   # Note: If using Coolify's managed Neo4j, you can remove this
   neo4j:
     image: neo4j:5.12
-    ports:
-      - "7474:7474"
-      - "7687:7687"
+    profiles: ["local-neo4j"]
+    expose:
+      - "7474"
+      - "7687"
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-crimegraph_password}
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
