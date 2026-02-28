@@ -9,6 +9,7 @@ const jurisdictionController = require('../controllers/jurisdictionPsController'
 const systemController = require('../controllers/systemController');
 
 // ================ System Health ================
+router.get('/healthz', systemController.getHealthz);
 router.get('/system/status', systemController.getSystemStatus);
 
 // Multer Storage Configuration

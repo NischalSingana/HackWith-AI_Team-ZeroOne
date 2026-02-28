@@ -49,3 +49,12 @@ exports.getSystemStatus = async (req, res) => {
 
     res.json(status);
 };
+
+// Lightweight health endpoint for load balancers/proxies.
+exports.getHealthz = (req, res) => {
+    res.status(200).json({
+        ok: true,
+        service: 'backend',
+        timestamp: new Date().toISOString(),
+    });
+};
